@@ -90,16 +90,25 @@ function CustomerProfile() {
   }
 
   return (
-    <div style={{ maxWidth: "600px", margin: "40px auto", fontFamily: "Arial" }}>
-      <h1>Customer Profile</h1>
-      <p>Set up your profile so the advisor can prepare better.</p>
+    <main className="app-page app-page--narrow">
+      <header className="page-header">
+        <p className="page-kicker">Clarity customer journey</p>
+        <h1>Customer Profile</h1>
+        <p className="lead">
+          Set up your profile so the Prudential Financial Representative can
+          prepare a more relevant discussion.
+        </p>
+      </header>
 
-      <button type="button" onClick={handleMockSingpass}>
-        Autofill with Singpass
-      </button>
+      <section className="card">
+        <div className="button-row" style={{ marginBottom: "20px" }}>
+          <button className="btn btn-outline" type="button" onClick={handleMockSingpass}>
+            Autofill with Singpass
+          </button>
+        </div>
 
-      <form onSubmit={handleSubmit} style={{ marginTop: "20px" }}>
-        <div>
+        <form className="form-grid" onSubmit={handleSubmit}>
+          <div className="field">
           <label>Full Name</label>
           <input
             name="full_name"
@@ -107,9 +116,9 @@ function CustomerProfile() {
             onChange={handleChange}
             required
           />
-        </div>
+          </div>
 
-        <div>
+          <div className="field">
           <label>Age</label>
           <input
             name="age"
@@ -118,18 +127,18 @@ function CustomerProfile() {
             onChange={handleChange}
             required
           />
-        </div>
+          </div>
 
-        <div>
+          <div className="field">
           <label>Occupation</label>
           <input
             name="occupation"
             value={formData.occupation}
             onChange={handleChange}
           />
-        </div>
+          </div>
 
-        <div>
+          <div className="field">
           <label>Monthly Income</label>
           <input
             name="monthly_income"
@@ -137,9 +146,9 @@ function CustomerProfile() {
             value={formData.monthly_income}
             onChange={handleChange}
           />
-        </div>
+          </div>
 
-        <div>
+          <div className="field">
           <label>Risk Appetite</label>
           <select
             name="risk_appetite"
@@ -151,9 +160,9 @@ function CustomerProfile() {
             <option value="Medium">Medium</option>
             <option value="High">High</option>
           </select>
-        </div>
+          </div>
 
-        <div>
+          <div className="field">
           <label>Main Goal</label>
           <select
             name="main_goal"
@@ -166,9 +175,9 @@ function CustomerProfile() {
             <option value="Retirement planning">Retirement planning</option>
             <option value="Education planning">Education planning</option>
           </select>
-        </div>
+          </div>
 
-        <div>
+          <div className="field">
           <label>Existing Insurance</label>
           <textarea
             name="existing_insurance"
@@ -176,9 +185,9 @@ function CustomerProfile() {
             onChange={handleChange}
             placeholder="Example: I have basic health insurance"
           />
-        </div>
+          </div>
 
-        <div>
+          <div className="field">
           <label>Preferred Meeting Type</label>
           <select
             name="preferred_meeting_type"
@@ -188,15 +197,16 @@ function CustomerProfile() {
             <option value="Online">Online</option>
             <option value="Offline">Offline</option>
           </select>
-        </div>
+          </div>
 
-        <button type="submit" disabled={loading}>
-          {loading ? "Saving..." : "Save Profile"}
-        </button>
-      </form>
+          <button className="btn btn-primary" type="submit" disabled={loading}>
+            {loading ? "Saving..." : "Save Profile"}
+          </button>
+        </form>
+      </section>
 
-      {message && <p>{message}</p>}
-    </div>
+      {message && <div className="alert alert-success">{message}</div>}
+    </main>
   );
 }
 

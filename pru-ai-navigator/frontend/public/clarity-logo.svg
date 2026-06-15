@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="330" height="180" viewBox="0 0 330 180" role="img" aria-labelledby="title desc">
+  <title id="title">Clarity</title>
+  <desc id="desc">Clarity logo with a red stylized A mark and tagline.</desc>
+  <rect width="330" height="180" fill="#ffffff"/>
+  <g transform="translate(111 9)">
+    <path d="M8 105 59 4l49 104H82L58 52 32 105Z" fill="#E60012"/>
+    <path d="M9 106c47-13 88-40 115-80l5 11 22-31-37 7 9 8C92 60 55 89 9 106Z" fill="#E60012"/>
+    <path d="M101 1 106 15 120 20 106 25 101 39 96 25 82 20 96 15Z" fill="#E60012"/>
+    <path d="M77 21 80 29 88 32 80 35 77 43 74 35 66 32 74 29Z" fill="#666666"/>
+    <path d="M96 49 98 55 104 57 98 59 96 65 94 59 88 57 94 55Z" fill="#666666"/>
+  </g>
+  <g fill="#1A1A1A" font-family="Helvetica Neue, Arial, sans-serif" font-weight="700" font-size="40" letter-spacing="15">
+    <text x="19" y="150">CLARITY</text>
+  </g>
+  <g font-family="Helvetica Neue, Arial, sans-serif" font-size="8" font-weight="700">
+    <line x1="15" y1="171" x2="52" y2="171" stroke="#E60012" stroke-width="1"/>
+    <text x="63" y="174" fill="#E60012">Agentic Intelligence.</text>
+    <text x="151" y="174" fill="#1A1A1A">Clear Choices. Confident Future.</text>
+    <line x1="281" y1="171" x2="318" y2="171" stroke="#E60012" stroke-width="1"/>
+  </g>
+</svg>

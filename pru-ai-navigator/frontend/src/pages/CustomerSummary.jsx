@@ -143,7 +143,7 @@ function CustomerSummary() {
             .map((item) => `- ${item.field_name}: ${item.question}`)
             .join("\n");
 
-    return `PRUPath Customer Session Summary
+    return `Clarity Customer Session Summary
 
 Profile
 Name: ${summary.customer.full_name || "Not provided"}
@@ -206,77 +206,86 @@ Important: This summary is for meeting preparation only and is not financial adv
     URL.revokeObjectURL(url);
   }
 
+  function renderMissingInput(item) {
+    const value = missingAnswers[item.field_name] || "";
+    const onChange = (e) => updateMissingAnswer(item.field_name, e.target.value);
+
+    if (item.field_name === "risk_appetite") {
+      return (
+        <select className="app-select" value={value} onChange={onChange}>
+          <option value="">Select risk appetite</option>
+          <option value="Low">Low</option>
+          <option value="Medium">Medium</option>
+          <option value="High">High</option>
+        </select>
+      );
+    }
+
+    if (item.field_name === "main_goal") {
+      return (
+        <select className="app-select" value={value} onChange={onChange}>
+          <option value="">Select goal</option>
+          <option value="Grow wealth">Grow wealth</option>
+          <option value="Protection">Protection</option>
+          <option value="Retirement planning">Retirement planning</option>
+          <option value="Education planning">Education planning</option>
+        </select>
+      );
+    }
+
+    if (item.field_name === "preferred_meeting_type") {
+      return (
+        <select className="app-select" value={value} onChange={onChange}>
+          <option value="">Select meeting type</option>
+          <option value="Online">Online</option>
+          <option value="Offline">Offline</option>
+        </select>
+      );
+    }
+
+    return (
+      <input
+        className="app-input"
+        type={item.field_name === "monthly_income" ? "number" : "text"}
+        value={value}
+        onChange={onChange}
+        placeholder="Type your answer"
+      />
+    );
+  }
+
   return (
-    <div
-      style={{
-        maxWidth: "900px",
-        margin: "40px auto",
-        fontFamily: "Arial",
-        padding: "0 20px"
-      }}
-    >
-      <h1>Customer Session Summary</h1>
+    <main className="app-page">
+      <header className="page-header">
+        <p className="page-kicker">Clarity readiness</p>
+        <h1>Customer Session Summary</h1>
+        <p className="lead">
+          Before booking a meeting, review what Clarity understood from your
+          profile and questions.
+        </p>
+      </header>
 
-      <p style={{ color: "#555" }}>
-        Before booking a meeting, review what PRUPath AI understood from your
-        profile and questions.
-      </p>
-
-      {loading && <p>Loading summary...</p>}
+      {loading && <p className="muted">Loading summary...</p>}
 
       {error && (
-        <div
-          style={{
-            border: "1px solid #fecaca",
-            backgroundColor: "#fef2f2",
-            color: "#991b1b",
-            padding: "14px",
-            borderRadius: "8px",
-            marginBottom: "20px"
-          }}
-        >
+        <div className="alert">
           <strong>Error:</strong> {error}
         </div>
       )}
 
-      {message && (
-        <div
-          style={{
-            border: "1px solid #bbf7d0",
-            backgroundColor: "#f0fdf4",
-            color: "#166534",
-            padding: "14px",
-            borderRadius: "8px",
-            marginBottom: "20px"
-          }}
-        >
-          {message}
-        </div>
-      )}
+      {message && <div className="alert alert-success">{message}</div>}
 
       {readiness && (
-        <div
-          style={{
-            border: "2px solid #bfdbfe",
-            backgroundColor: "#eff6ff",
-            padding: "18px",
-            borderRadius: "10px",
-            marginBottom: "20px"
-          }}
-        >
-          <h2 style={{ marginTop: 0 }}>Readiness Score</h2>
-
-          <p style={{ fontSize: "28px", fontWeight: "bold" }}>
-            {readiness.score}%
-          </p>
-
+        <section className="card section-card">
+          <h2>Readiness Score</h2>
+          <p className="metric">{readiness.score}%</p>
           <p>
             <strong>Status:</strong> {readiness.status}
           </p>
 
           {readiness.reasons.length > 0 && (
             <>
-              <h3>Why this score?</h3>
+              <h3 style={{ marginTop: "16px" }}>Why this score?</h3>
               <ul>
                 {readiness.reasons.map((reason, index) => (
                   <li key={index}>{reason}</li>
@@ -284,97 +293,68 @@ Important: This summary is for meeting preparation only and is not financial adv
               </ul>
             </>
           )}
-        </div>
+        </section>
       )}
 
       {summary && (
         <>
-          <div
-            style={{
-              border: "1px solid #ddd",
-              backgroundColor: "white",
-              padding: "18px",
-              borderRadius: "10px",
-              marginBottom: "20px"
-            }}
-          >
+          <section className="card">
             <h2>Profile Summary</h2>
+            <div className="details-grid">
+              <p>
+                <strong>Name:</strong> {summary.customer.full_name}
+              </p>
+              <p>
+                <strong>Age:</strong> {summary.customer.age || "Not provided"}
+              </p>
+              <p>
+                <strong>Occupation:</strong>{" "}
+                {summary.customer.occupation || "Not provided"}
+              </p>
+              <p>
+                <strong>Monthly Income:</strong>{" "}
+                {summary.customer.monthly_income || "Not provided"}
+              </p>
+              <p>
+                <strong>Main Goal:</strong>{" "}
+                {summary.customer.main_goal || "Not provided"}
+              </p>
+              <p>
+                <strong>Risk Appetite:</strong>{" "}
+                {summary.customer.risk_appetite || "Not provided"}
+              </p>
+            </div>
+          </section>
 
-            <p>
-              <strong>Name:</strong> {summary.customer.full_name}
-            </p>
-
-            <p>
-              <strong>Age:</strong> {summary.customer.age || "Not provided"}
-            </p>
-
-            <p>
-              <strong>Occupation:</strong>{" "}
-              {summary.customer.occupation || "Not provided"}
-            </p>
-
-            <p>
-              <strong>Monthly Income:</strong>{" "}
-              {summary.customer.monthly_income || "Not provided"}
-            </p>
-
-            <p>
-              <strong>Main Goal:</strong>{" "}
-              {summary.customer.main_goal || "Not provided"}
-            </p>
-
-            <p>
-              <strong>Risk Appetite:</strong>{" "}
-              {summary.customer.risk_appetite || "Not provided"}
-            </p>
-          </div>
-
-          <div
-            style={{
-              border: "1px solid #ddd",
-              backgroundColor: "#f9fafb",
-              padding: "18px",
-              borderRadius: "10px",
-              marginBottom: "20px"
-            }}
-          >
+          <section className="card section-card">
             <h2>Detected Product Interest</h2>
 
             {summary.latest_product_interest ? (
-              <>
+              <div className="details-grid">
                 <p>
                   <strong>Product:</strong>{" "}
-                  {summary.latest_product_interest.product_category}
+                  <span className="highlight">
+                    {summary.latest_product_interest.product_category}
+                  </span>
                 </p>
-
                 <p>
                   <strong>Confidence:</strong>{" "}
                   {summary.latest_product_interest.confidence}
                 </p>
-
                 <p>
                   <strong>Reason:</strong>{" "}
                   {summary.latest_product_interest.reason}
                 </p>
-              </>
+              </div>
             ) : (
-              <p>No product interest has been detected yet.</p>
+              <p className="muted">No product interest has been detected yet.</p>
             )}
-          </div>
+          </section>
 
-          <div
-            style={{
-              border: "1px solid #ddd",
-              backgroundColor: "white",
-              padding: "18px",
-              borderRadius: "10px",
-              marginBottom: "20px"
-            }}
-          >
+          <section className="card">
             <h2>Your Questions</h2>
-
             {summary.questions.length === 0 ? (
-              <p>No questions asked yet.</p>
+              <p className="muted">No questions asked yet.</p>
             ) : (
               <ul>
                 {summary.questions.map((q, index) => (
@@ -385,216 +365,74 @@ Important: This summary is for meeting preparation only and is not financial adv
                 ))}
               </ul>
             )}
-          </div>
+          </section>
 
-          <div
-            style={{
-              border: "1px solid #ddd",
-              backgroundColor: "white",
-              padding: "18px",
-              borderRadius: "10px",
-              marginBottom: "20px"
-            }}
-          >
+          <section className="card">
             <h2>Concern Tags</h2>
-
             {summary.concern_tags.length === 0 ? (
-              <p>No major concerns detected yet.</p>
+              <p className="muted">No major concerns detected yet.</p>
             ) : (
-              summary.concern_tags.map((tag, index) => (
-                <span
-                  key={index}
-                  style={{
-                    display: "inline-block",
-                    padding: "8px 12px",
-                    backgroundColor: "#fee2e2",
-                    color: "#991b1b",
-                    borderRadius: "999px",
-                    marginRight: "8px",
-                    marginBottom: "8px"
-                  }}
-                >
-                  {tag}
-                </span>
-              ))
+              <div className="tag-list">
+                {summary.concern_tags.map((tag, index) => (
+                  <span className="tag" key={index}>
+                    {tag}
+                  </span>
+                ))}
+              </div>
             )}
-          </div>
+          </section>
 
-          <div
-            style={{
-              border: "2px solid #f59e0b",
-              backgroundColor: "#fffbeb",
-              padding: "18px",
-              borderRadius: "10px",
-              marginBottom: "20px"
-            }}
-          >
-            <h2 style={{ color: "#92400e" }}>Missing Information</h2>
+          <section className="card section-card">
+            <h2>
+              Missing <span className="highlight">Information</span>
+            </h2>
 
             {summary.missing_info.length === 0 ? (
-              <p>No missing information detected.</p>
+              <p className="muted">No missing information detected.</p>
             ) : (
-              <form onSubmit={saveMissingInfo}>
+              <form className="form-grid" onSubmit={saveMissingInfo}>
                 {summary.missing_info.map((item, index) => (
-                  <div
-                    key={index}
-                    style={{
-                      padding: "10px",
-                      backgroundColor: "white",
-                      border: "1px solid #fcd34d",
-                      borderRadius: "8px",
-                      marginBottom: "8px"
-                    }}
-                  >
-                    <strong>{item.field_name}</strong>
-                    <p style={{ margin: "4px 0 8px 0" }}>{item.question}</p>
-
-                    {item.field_name === "risk_appetite" ? (
-                      <select
-                        value={missingAnswers[item.field_name] || ""}
-                        onChange={(e) =>
-                          updateMissingAnswer(item.field_name, e.target.value)
-                        }
-                        style={{
-                          width: "100%",
-                          padding: "10px",
-                          borderRadius: "6px",
-                          border: "1px solid #ccc"
-                        }}
-                      >
-                        <option value="">Select risk appetite</option>
-                        <option value="Low">Low</option>
-                        <option value="Medium">Medium</option>
-                        <option value="High">High</option>
-                      </select>
-                    ) : item.field_name === "main_goal" ? (
-                      <select
-                        value={missingAnswers[item.field_name] || ""}
-                        onChange={(e) =>
-                          updateMissingAnswer(item.field_name, e.target.value)
-                        }
-                        style={{
-                          width: "100%",
-                          padding: "10px",
-                          borderRadius: "6px",
-                          border: "1px solid #ccc"
-                        }}
-                      >
-                        <option value="">Select goal</option>
-                        <option value="Grow wealth">Grow wealth</option>
-                        <option value="Protection">Protection</option>
-                        <option value="Retirement planning">
-                          Retirement planning
-                        </option>
-                        <option value="Education planning">
-                          Education planning
-                        </option>
-                      </select>
-                    ) : item.field_name === "preferred_meeting_type" ? (
-                      <select
-                        value={missingAnswers[item.field_name] || ""}
-                        onChange={(e) =>
-                          updateMissingAnswer(item.field_name, e.target.value)
-                        }
-                        style={{
-                          width: "100%",
-                          padding: "10px",
-                          borderRadius: "6px",
-                          border: "1px solid #ccc"
-                        }}
-                      >
-                        <option value="">Select meeting type</option>
-                        <option value="Online">Online</option>
-                        <option value="Offline">Offline</option>
-                      </select>
-                    ) : (
-                      <input
-                        type={
-                          item.field_name === "monthly_income"
-                            ? "number"
-                            : "text"
-                        }
-                        value={missingAnswers[item.field_name] || ""}
-                        onChange={(e) =>
-                          updateMissingAnswer(item.field_name, e.target.value)
-                        }
-                        placeholder="Type your answer"
-                        style={{
-                          width: "100%",
-                          padding: "10px",
-                          borderRadius: "6px",
-                          border: "1px solid #ccc",
-                          boxSizing: "border-box"
-                        }}
-                      />
-                    )}
+                  <div className="card" key={index}>
+                    <h3 className="highlight">{item.field_name}</h3>
+                    <p style={{ marginBottom: "10px" }}>{item.question}</p>
+                    {renderMissingInput(item)}
                   </div>
                 ))}
 
                 <button
+                  className="btn btn-primary"
                   type="submit"
                   disabled={savingMissingInfo}
-                  style={{
-                    padding: "10px 14px",
-                    borderRadius: "8px",
-                    border: "none",
-                    backgroundColor: "#dc2626",
-                    color: "white",
-                    cursor: savingMissingInfo ? "not-allowed" : "pointer"
-                  }}
                 >
                   {savingMissingInfo ? "Saving..." : "Save Missing Information"}
                 </button>
               </form>
             )}
-          </div>
+          </section>
         </>
       )}
 
-      <button
-        onClick={downloadSummary}
-        disabled={!summary}
-        style={{
-          padding: "12px 18px",
-          borderRadius: "8px",
-          border: "1px solid #dc2626",
-          backgroundColor: "white",
-          color: "#dc2626",
-          cursor: summary ? "pointer" : "not-allowed",
-          marginRight: "10px"
-        }}
-      >
-        Download Summary
-      </button>
+      <div className="button-row">
+        <button
+          className="btn btn-outline"
+          onClick={downloadSummary}
+          disabled={!summary}
+        >
+          Download Summary
+        </button>
 
-      <button
-        onClick={() => navigate("/book-meeting")}
-        style={{
-          padding: "12px 18px",
-          borderRadius: "8px",
-          border: "none",
-          backgroundColor: "#dc2626",
-          color: "white",
-          cursor: "pointer",
-          marginRight: "10px"
-        }}
-      >
-        Continue to AI Meeting Booking
-      </button>
+        <button
+          className="btn btn-primary"
+          onClick={() => navigate("/book-meeting")}
+        >
+          Continue to Clarity Meeting Booking
+        </button>
 
-      <button
-        onClick={() => navigate("/document-chat")}
-        style={{
-          padding: "12px 18px",
-          borderRadius: "8px",
-          border: "1px solid #ccc",
-          backgroundColor: "white",
-          cursor: "pointer"
-        }}
-      >
-        Back to Chat
-      </button>
-    </div>
+        <button className="btn" onClick={() => navigate("/document-chat")}>
+          Back to Chat
+        </button>
+      </div>
+    </main>
   );
 }
 

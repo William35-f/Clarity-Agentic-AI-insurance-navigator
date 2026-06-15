@@ -85,227 +85,141 @@ function AdvisorDashboard() {
   }
 
   return (
-    <div
-      style={{
-        maxWidth: "1000px",
-        margin: "40px auto",
-        fontFamily: "Arial",
-        padding: "0 20px"
-      }}
-    >
-      <h1>Advisor Dashboard</h1>
-
-      <p style={{ color: "#555" }}>
-        This dashboard helps the Prudential Financial Representative prepare for
-        the meeting using the customer profile, AI chat history, missing
-        information, and product interest.
-      </p>
+    <main className="app-page">
+      <header className="page-header">
+        <p className="page-kicker">Clarity prep pack</p>
+        <h1>Advisor Dashboard</h1>
+        <p className="lead">
+          This dashboard helps the Prudential Financial Representative prepare
+          for the meeting using the customer profile, Clarity chat history, missing
+          information, and product interest.
+        </p>
+      </header>
 
       {error && (
-        <div
-          style={{
-            border: "1px solid #fecaca",
-            backgroundColor: "#fef2f2",
-            color: "#991b1b",
-            padding: "14px",
-            borderRadius: "8px",
-            marginBottom: "20px"
-          }}
-        >
+        <div className="alert">
           <strong>Error:</strong> {error}
         </div>
       )}
 
-      {loadingMeeting && <p>Loading meeting details...</p>}
+      {loadingMeeting && <p className="muted">Loading meeting details...</p>}
 
       {meeting && (
-        <div
-          style={{
-            border: "1px solid #ddd",
-            padding: "18px",
-            borderRadius: "10px",
-            marginBottom: "20px",
-            backgroundColor: "#fff"
-          }}
-        >
+        <section className="card">
           <h2>Meeting Details</h2>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: "12px"
-            }}
-          >
+          <div className="details-grid">
             <p>
               <strong>Customer:</strong> {meeting.customer_name}
             </p>
-
             <p>
               <strong>Age:</strong> {meeting.age || "Not provided"}
             </p>
-
             <p>
-              <strong>Occupation:</strong> {meeting.occupation || "Not provided"}
+              <strong>Occupation:</strong>{" "}
+              {meeting.occupation || "Not provided"}
             </p>
-
             <p>
               <strong>Monthly Income:</strong>{" "}
               {meeting.monthly_income || "Not provided"}
             </p>
-
             <p>
               <strong>Main Goal:</strong> {meeting.main_goal || "Not provided"}
             </p>
-
             <p>
               <strong>Risk Appetite:</strong>{" "}
               {meeting.risk_appetite || "Not provided"}
             </p>
-
             <p>
               <strong>Existing Insurance:</strong>{" "}
               {meeting.existing_insurance || "Not provided"}
             </p>
-
             <p>
               <strong>Meeting Type:</strong> {meeting.meeting_type}
             </p>
-
             <p>
               <strong>Meeting Time:</strong> {meeting.meeting_datetime}
             </p>
-
             <p>
               <strong>Status:</strong> {meeting.status}
             </p>
-
             <p>
               <strong>Detected Product Interest:</strong>{" "}
-              {meeting.product_interest}
+              <span className="highlight">{meeting.product_interest}</span>
             </p>
-
             <p>
               <strong>Matched Advisor:</strong> {meeting.advisor_name}
             </p>
-
             <p>
               <strong>Advisor Specialty:</strong> {meeting.advisor_specialty}
             </p>
-
             <p>
               <strong>Advisor Location:</strong>{" "}
               {meeting.advisor_location || "Not provided"}
             </p>
           </div>
-        </div>
+        </section>
       )}
 
       {meeting && missingInfo.length > 0 && (
-        <div
-          style={{
-            border: "2px solid #f59e0b",
-            backgroundColor: "#fffbeb",
-            padding: "18px",
-            borderRadius: "10px",
-            marginBottom: "20px"
-          }}
-        >
-          <h2 style={{ color: "#92400e", marginTop: 0 }}>
-            Missing Customer Information
+        <section className="card section-card">
+          <h2>
+            Missing Customer <span className="highlight">Information</span>
           </h2>
-
-          <p style={{ color: "#92400e" }}>
+          <p className="muted">
             The customer has not provided the following information. The advisor
             should clarify these before discussing suitability or next steps.
           </p>
 
-          {missingInfo.map((item, index) => (
-            <div
-              key={item.missing_id || index}
-              style={{
-                padding: "12px",
-                marginBottom: "10px",
-                backgroundColor: "white",
-                borderRadius: "8px",
-                border: "1px solid #fcd34d"
-              }}
-            >
-              <strong>
-                {index + 1}. {item.field_name}
-              </strong>
-
-              <p style={{ margin: "6px 0 0 0" }}>{item.question}</p>
-            </div>
-          ))}
-        </div>
+          <div className="card-grid" style={{ marginTop: "16px" }}>
+            {missingInfo.map((item, index) => (
+              <div className="card" key={item.missing_id || index}>
+                <h3 className="highlight">
+                  {index + 1}. {item.field_name}
+                </h3>
+                <p>{item.question}</p>
+              </div>
+            ))}
+          </div>
+        </section>
       )}
 
       {meeting && missingInfo.length === 0 && (
-        <div
-          style={{
-            border: "1px solid #86efac",
-            backgroundColor: "#f0fdf4",
-            padding: "18px",
-            borderRadius: "10px",
-            marginBottom: "20px"
-          }}
-        >
-          <h2 style={{ color: "#166534", marginTop: 0 }}>
-            Customer Profile Complete
-          </h2>
-
-          <p style={{ color: "#166534" }}>
-            No major missing customer information was detected.
-          </p>
+        <div className="alert alert-success">
+          <strong>Customer Profile Complete.</strong> No major missing customer
+          information was detected.
         </div>
       )}
 
-      <button
-        onClick={generateSummary}
-        disabled={loadingSummary || !meeting}
-        style={{
-          padding: "12px 18px",
-          borderRadius: "8px",
-          border: "none",
-          backgroundColor: loadingSummary || !meeting ? "#999" : "#dc2626",
-          color: "white",
-          cursor: loadingSummary || !meeting ? "not-allowed" : "pointer",
-          marginBottom: "20px"
-        }}
-      >
-        {loadingSummary
-          ? "Generating AI Summary..."
-          : "Generate Advisor Prep Summary"}
-      </button>
+      <div className="button-row" style={{ marginBottom: "20px" }}>
+        <button
+          className="btn btn-primary"
+          onClick={generateSummary}
+          disabled={loadingSummary || !meeting}
+        >
+          {loadingSummary
+            ? "Generating Clarity Summary..."
+            : "Generate Advisor Prep Summary"}
+        </button>
+      </div>
 
       {summary && (
-        <div
-          style={{
-            border: "1px solid #ddd",
-            padding: "18px",
-            borderRadius: "10px",
-            backgroundColor: "#f9fafb",
-            marginTop: "10px"
-          }}
-        >
-          <h2>AI Advisor Preparation Pack</h2>
+        <section className="card section-card">
+          <h2>Clarity Advisor Preparation Pack</h2>
 
-          <section style={{ marginBottom: "18px" }}>
+          <section className="prep-section">
             <h3>Customer Summary</h3>
             <p>{summary.customer_summary}</p>
           </section>
 
-          <section style={{ marginBottom: "18px" }}>
+          <section className="prep-section">
             <h3>Product Interest</h3>
-            <p>{summary.product_interest}</p>
+            <p className="highlight">{summary.product_interest}</p>
           </section>
 
-          <section style={{ marginBottom: "18px" }}>
+          <section className="prep-section">
             <h3>Questions Asked by Customer</h3>
-
             {summary.questions_asked.length === 0 ? (
-              <p>No questions were recorded.</p>
+              <p className="muted">No questions were recorded.</p>
             ) : (
               <ul>
                 {summary.questions_asked.map((item, index) => (
@@ -315,11 +229,10 @@ function AdvisorDashboard() {
             )}
           </section>
 
-          <section style={{ marginBottom: "18px" }}>
+          <section className="prep-section">
             <h3>Clarification Points</h3>
-
             {summary.clarification_points.length === 0 ? (
-              <p>No clarification points were generated.</p>
+              <p className="muted">No clarification points were generated.</p>
             ) : (
               <ul>
                 {summary.clarification_points.map((item, index) => (
@@ -329,11 +242,12 @@ function AdvisorDashboard() {
             )}
           </section>
 
-          <section style={{ marginBottom: "18px" }}>
+          <section className="prep-section">
             <h3>Missing Information</h3>
-
             {summary.missing_info.length === 0 ? (
-              <p>No missing information was included in the summary.</p>
+              <p className="muted">
+                No missing information was included in the summary.
+              </p>
             ) : (
               <ul>
                 {summary.missing_info.map((item, index) => (
@@ -343,33 +257,22 @@ function AdvisorDashboard() {
             )}
           </section>
 
-          <section>
+          <section className="prep-section">
             <h3>Advisor Checklist</h3>
-
             {summary.checklist.length === 0 ? (
-              <p>No checklist items were generated.</p>
+              <p className="muted">No checklist items were generated.</p>
             ) : (
               summary.checklist.map((item, index) => (
-                <label
-                  key={index}
-                  style={{
-                    display: "block",
-                    marginBottom: "10px",
-                    padding: "10px",
-                    backgroundColor: "white",
-                    borderRadius: "6px",
-                    border: "1px solid #ddd"
-                  }}
-                >
-                  <input type="checkbox" style={{ marginRight: "8px" }} />
-                  {item}
+                <label className="checklist-item" key={index}>
+                  <input type="checkbox" />
+                  <span>{item}</span>
                 </label>
               ))
             )}
           </section>
-        </div>
+        </section>
       )}
-    </div>
+    </main>
   );
 }
 
