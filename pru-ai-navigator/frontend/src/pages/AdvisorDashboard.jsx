@@ -1,4 +1,9 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+
+function formatMeetingType(value) {
+  return value === "Offline" ? "In-person" : value || "Not provided";
+}
 
 function AdvisorDashboard() {
   const [meeting, setMeeting] = useState(null);
@@ -65,7 +70,10 @@ function AdvisorDashboard() {
       const response = await fetch(
         `http://localhost:5000/api/advisor/meetings/${meetingId}/generate-summary`,
         {
-          method: "POST"
+          method: "POST",
+          headers: {
+            "x-demo-role": "advisor"
+          }
         }
       );
 
@@ -87,6 +95,7 @@ function AdvisorDashboard() {
   return (
     <main className="app-page">
       <header className="page-header">
+        <div className="view-badge">Advisor View</div>
         <p className="page-kicker">Clarity prep pack</p>
         <h1>Advisor Dashboard</h1>
         <p className="lead">
@@ -134,10 +143,21 @@ function AdvisorDashboard() {
               {meeting.existing_insurance || "Not provided"}
             </p>
             <p>
-              <strong>Meeting Type:</strong> {meeting.meeting_type}
+              <strong>Meeting Type:</strong> {formatMeetingType(meeting.meeting_type)}
             </p>
             <p>
               <strong>Meeting Time:</strong> {meeting.meeting_datetime}
+            </p>
+            <p>
+              <strong>Meeting End:</strong>{" "}
+              {meeting.end_datetime || "Not provided"}
+            </p>
+            <p>
+              <strong>Location / Details:</strong>{" "}
+              {meeting.meeting_location?.label || "Not provided"}
+              {meeting.meeting_location?.details
+                ? ` - ${meeting.meeting_location.details}`
+                : ""}
             </p>
             <p>
               <strong>Status:</strong> {meeting.status}
@@ -200,6 +220,12 @@ function AdvisorDashboard() {
             ? "Generating Clarity Summary..."
             : "Generate Advisor Prep Summary"}
         </button>
+        <Link
+          className="btn"
+          to={`/advisor/meeting-assistant?meeting_id=${meetingId || ""}`}
+        >
+          Open Meeting Assistant
+        </Link>
       </div>
 
       {summary && (

@@ -1,5 +1,214 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import CustomerJourneyStepper from "../components/CustomerJourneyStepper";
+
+const FIELD_LABELS = {
+  monthly_income: "Monthly Income",
+  main_goal: "Main Goal",
+  risk_appetite: "Risk Appetite",
+  existing_insurance: "Existing Insurance",
+  preferred_meeting_type: "Preferred Meeting Type"
+};
+
+const FIELD_ALIASES = {
+  monthly_income: ["monthly income", "monthly salary", "salary", "monthly pay"],
+  risk_appetite: ["risk appetite", "risk tolerance", "investment risk comfort"],
+  main_goal: ["main goal", "financial goal", "goal", "objective"],
+  existing_insurance: [
+    "existing insurance",
+    "insurance coverage",
+    "current insurance",
+    "coverage"
+  ],
+  preferred_meeting_type: [
+    "preferred meeting type",
+    "meeting type",
+    "meeting preference"
+  ]
+};
+
+const DISCUSSION_CATEGORY_DETAILS = {
+  "Health Protection": {
+    title: "Health Protection",
+    description:
+      "Review hospital, medical, and health-related protection needs before the meeting.",
+    advisorClarify:
+      "Confirm current medical coverage, exclusions, claim limits, and whether additional health protection is needed."
+  },
+  "Life Protection": {
+    title: "Life Protection",
+    description:
+      "Discuss income protection, family responsibilities, death coverage, and long-term protection gaps.",
+    advisorClarify:
+      "Confirm dependents, existing life cover, affordability, and the right level of protection."
+  },
+  "Wealth Accumulation": {
+    title: "Wealth Accumulation",
+    description:
+      "Explore long-term wealth growth goals, risk comfort, premium commitment, and non-guaranteed returns.",
+    advisorClarify:
+      "Confirm investment risk understanding, charges, premium budget, time horizon, and fund choices."
+  },
+  "Legacy Planning": {
+    title: "Legacy Planning",
+    description:
+      "Review retirement, wealth continuity, beneficiary, and legacy planning goals raised during the interview.",
+    advisorClarify:
+      "Confirm intended beneficiaries, planning timeline, liquidity needs, and policy ownership details."
+  },
+  "General Prudential ILP": {
+    title: "General Prudential ILP",
+    description:
+      "Use the meeting to clarify general investment-linked insurance features, risks, charges, and suitability.",
+    advisorClarify:
+      "Confirm whether an investment-linked plan is appropriate after reviewing needs, budget, and risk comfort."
+  }
+};
+
+function normalizeDiscussionCategory(value = "") {
+  const text = String(value || "").toLowerCase();
+
+  if (text.includes("health") || text.includes("medical") || text.includes("hospital")) {
+    return "Health Protection";
+  }
+
+  if (text.includes("life") || text.includes("family") || text.includes("protection")) {
+    return "Life Protection";
+  }
+
+  if (text.includes("linkguard")) {
+    return "Life Protection";
+  }
+
+  if (
+    text.includes("wealth") ||
+    text.includes("pruvantage") ||
+    text.includes("prulink") ||
+    text.includes("pruunited") ||
+    text.includes("invest") ||
+    text.includes("growth") ||
+    text.includes("savings")
+  ) {
+    return "Wealth Accumulation";
+  }
+
+  if (
+    text.includes("legacy") ||
+    text.includes("retirement") ||
+    text.includes("estate")
+  ) {
+    return "Legacy Planning";
+  }
+
+  return "General Prudential ILP";
+}
+
+function buildDiscussionCategories(summary) {
+  if (!summary) return [];
+
+  const scores = new Map();
+  const reasons = new Map();
+
+  function addCategory(category, reason, weight = 1) {
+    if (!String(category || "").trim()) return;
+
+    const normalizedCategory = normalizeDiscussionCategory(category);
+
+    scores.set(normalizedCategory, (scores.get(normalizedCategory) || 0) + weight);
+    reasons.set(normalizedCategory, [
+      ...(reasons.get(normalizedCategory) || []),
+      reason
+    ].filter(Boolean));
+  }
+
+  summary.questions.forEach((item) => {
+    addCategory(
+      item.related_product,
+      `Raised through the question: "${item.question}"`,
+      2
+    );
+  });
+
+  addCategory(
+    summary.customer.main_goal,
+    `Profile goal: ${summary.customer.main_goal || "Not provided"}`,
+    1
+  );
+  addCategory(
+    summary.customer.existing_insurance,
+    `Existing insurance: ${summary.customer.existing_insurance || "Not provided"}`,
+    1
+  );
+
+  if (summary.latest_product_interest?.product_category) {
+    addCategory(
+      summary.latest_product_interest.product_category,
+      summary.latest_product_interest.reason,
+      3
+    );
+  }
+
+  return [...scores.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4)
+    .map(([category, score]) => ({
+      category,
+      score,
+      ...(DISCUSSION_CATEGORY_DETAILS[category] ||
+        DISCUSSION_CATEGORY_DETAILS["General Prudential ILP"]),
+      reason: [...new Set(reasons.get(category) || [])][0] || ""
+    }));
+}
+
+function isPlanFocusQuestion(question = "") {
+  const questionText = String(question).trim().toLowerCase();
+
+  return (
+    questionText.includes("monthly income payouts") ||
+    (questionText.includes("long-term growth") &&
+      questionText.includes("balance of both"))
+  );
+}
+
+function isMonthlyPremiumBudgetQuestion(question = "") {
+  return String(question).trim().toLowerCase().includes("premium budget");
+}
+
+function normalizeFieldName(fieldName = "", question = "") {
+  if (isMonthlyPremiumBudgetQuestion(question)) {
+    return "monthly_income";
+  }
+
+  if (isPlanFocusQuestion(question)) {
+    return "main_goal";
+  }
+
+  const normalized = String(fieldName)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_|_$/g, "");
+
+  if (FIELD_LABELS[normalized]) {
+    return normalized;
+  }
+
+  const readable = normalized.replace(/_/g, " ");
+
+  return (
+    Object.entries(FIELD_ALIASES).find(([, aliases]) =>
+      aliases.some((alias) => readable.includes(alias))
+    )?.[0] || normalized
+  );
+}
+
+function getMissingInfoLabel(item) {
+  if (isMonthlyPremiumBudgetQuestion(item.question)) {
+    return "Monthly Premium Budget";
+  }
+
+  return FIELD_LABELS[normalizeFieldName(item.field_name, item.question)] || item.field_name;
+}
 
 function CustomerSummary() {
   const navigate = useNavigate();
@@ -11,8 +220,16 @@ function CustomerSummary() {
   const [missingAnswers, setMissingAnswers] = useState({});
   const [loading, setLoading] = useState(false);
   const [savingMissingInfo, setSavingMissingInfo] = useState(false);
+  const [savedMissingInfo, setSavedMissingInfo] = useState([]);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [showMeetingWarning, setShowMeetingWarning] = useState(false);
+
+  const hasMissingAnswers = Object.values(missingAnswers).some(
+    (value) =>
+      value !== undefined && value !== null && String(value).trim() !== ""
+  );
+  const discussionCategories = buildDiscussionCategories(summary);
 
   const fetchSummary = useCallback(async () => {
     if (!customerId) {
@@ -70,10 +287,12 @@ function CustomerSummary() {
     };
   }, [fetchSummary]);
 
-  function updateMissingAnswer(fieldName, value) {
+  function updateMissingAnswer(fieldName, value, question) {
+    const normalizedFieldName = normalizeFieldName(fieldName, question);
+
     setMissingAnswers((prev) => ({
       ...prev,
-      [fieldName]: value
+      [normalizedFieldName]: value
     }));
   }
 
@@ -108,6 +327,7 @@ function CustomerSummary() {
 
       localStorage.setItem("missing_info", JSON.stringify([]));
       setMissingAnswers({});
+      setSavedMissingInfo(data.saved_info || []);
       setMessage("Missing information saved.");
       await fetchSummary();
     } catch (error) {
@@ -143,6 +363,16 @@ function CustomerSummary() {
             .map((item) => `- ${item.field_name}: ${item.question}`)
             .join("\n");
 
+    const discussionCategoryText =
+      discussionCategories.length === 0
+        ? "No clear discussion categories detected yet."
+        : discussionCategories
+            .map(
+              (item) =>
+                `- ${item.title}: ${item.description} Advisor should clarify: ${item.advisorClarify}`
+            )
+            .join("\n");
+
     return `Clarity Customer Session Summary
 
 Profile
@@ -173,6 +403,9 @@ Product: ${
     }
 Confidence: ${summary.latest_product_interest?.confidence || "Not detected"}
 Reason: ${summary.latest_product_interest?.reason || "Not detected"}
+
+Categories to Discuss with Advisor
+${discussionCategoryText}
 
 Questions Asked
 ${questions}
@@ -206,22 +439,59 @@ Important: This summary is for meeting preparation only and is not financial adv
     URL.revokeObjectURL(url);
   }
 
-  function renderMissingInput(item) {
-    const value = missingAnswers[item.field_name] || "";
-    const onChange = (e) => updateMissingAnswer(item.field_name, e.target.value);
+  function handleContinueToMeeting() {
+    const missingCount = summary?.missing_info?.length || 0;
 
-    if (item.field_name === "risk_appetite") {
+    if (missingCount >= 3) {
+      setShowMeetingWarning(true);
+      return;
+    }
+
+    navigate("/book-meeting");
+  }
+
+  function renderMissingInput(item) {
+    const fieldName = normalizeFieldName(item.field_name, item.question);
+    const value = missingAnswers[fieldName] || "";
+    const onChange = (e) =>
+      updateMissingAnswer(fieldName, e.target.value, item.question);
+
+    if (fieldName === "monthly_income") {
+      return (
+        <input
+          className="app-input"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          value={value}
+          onChange={(e) =>
+            updateMissingAnswer(
+              fieldName,
+              e.target.value.replace(/\D/g, ""),
+              item.question
+            )
+          }
+          placeholder={
+            isMonthlyPremiumBudgetQuestion(item.question)
+              ? "Enter monthly premium budget"
+              : "Enter monthly income"
+          }
+        />
+      );
+    }
+
+    if (fieldName === "risk_appetite") {
       return (
         <select className="app-select" value={value} onChange={onChange}>
           <option value="">Select risk appetite</option>
-          <option value="Low">Low</option>
-          <option value="Medium">Medium</option>
-          <option value="High">High</option>
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+          <option value="not_sure">Not sure</option>
         </select>
       );
     }
 
-    if (item.field_name === "main_goal") {
+    if (fieldName === "main_goal" && !isPlanFocusQuestion(item.question)) {
       return (
         <select className="app-select" value={value} onChange={onChange}>
           <option value="">Select goal</option>
@@ -233,7 +503,7 @@ Important: This summary is for meeting preparation only and is not financial adv
       );
     }
 
-    if (item.field_name === "preferred_meeting_type") {
+    if (fieldName === "preferred_meeting_type") {
       return (
         <select className="app-select" value={value} onChange={onChange}>
           <option value="">Select meeting type</option>
@@ -246,10 +516,14 @@ Important: This summary is for meeting preparation only and is not financial adv
     return (
       <input
         className="app-input"
-        type={item.field_name === "monthly_income" ? "number" : "text"}
+        type="text"
         value={value}
         onChange={onChange}
-        placeholder="Type your answer"
+        placeholder={
+          isPlanFocusQuestion(item.question)
+            ? "Type income, growth, balance, or a number"
+            : "Type your answer"
+        }
       />
     );
   }
@@ -263,6 +537,7 @@ Important: This summary is for meeting preparation only and is not financial adv
           Before booking a meeting, review what Clarity understood from your
           profile and questions.
         </p>
+        <CustomerJourneyStepper activeStep="Coverage Map" />
       </header>
 
       {loading && <p className="muted">Loading summary...</p>}
@@ -323,6 +598,14 @@ Important: This summary is for meeting preparation only and is not financial adv
                 <strong>Risk Appetite:</strong>{" "}
                 {summary.customer.risk_appetite || "Not provided"}
               </p>
+              <p>
+                <strong>Existing Insurance:</strong>{" "}
+                {summary.customer.existing_insurance || "Not provided"}
+              </p>
+              <p>
+                <strong>Preferred Meeting Type:</strong>{" "}
+                {summary.customer.preferred_meeting_type || "Not provided"}
+              </p>
             </div>
           </section>
 
@@ -348,6 +631,40 @@ Important: This summary is for meeting preparation only and is not financial adv
               </div>
             ) : (
               <p className="muted">No product interest has been detected yet.</p>
+            )}
+          </section>
+
+          <section className="card">
+            <h2>Categories to Discuss with an Advisor</h2>
+            <p className="muted">
+              Based on the overall Clarity conversation, profile details, and
+              recorded question history.
+            </p>
+
+            {discussionCategories.length === 0 ? (
+              <p className="muted" style={{ marginTop: "12px" }}>
+                No clear category focus has been detected yet.
+              </p>
+            ) : (
+              <div className="discussion-category-grid">
+                {discussionCategories.map((item) => (
+                  <article className="discussion-category-card" key={item.category}>
+                    <div>
+                      <h3>{item.title}</h3>
+                      <p>{item.description}</p>
+                    </div>
+                    {item.reason && (
+                      <p className="source-note">
+                        <strong>Why this appeared:</strong> {item.reason}
+                      </p>
+                    )}
+                    <p className="source-note">
+                      <strong>Advisor should clarify:</strong>{" "}
+                      {item.advisorClarify}
+                    </p>
+                  </article>
+                ))}
+              </div>
             )}
           </section>
 
@@ -387,13 +704,31 @@ Important: This summary is for meeting preparation only and is not financial adv
               Missing <span className="highlight">Information</span>
             </h2>
 
+            {savedMissingInfo.length > 0 && (
+              <div className="details-grid" style={{ marginBottom: "16px" }}>
+                {savedMissingInfo.map((item) => (
+                  <p key={item.field_name}>
+                    <strong>
+                      {item.label ||
+                        FIELD_LABELS[normalizeFieldName(item.field_name)] ||
+                        item.field_name}
+                      :
+                    </strong>{" "}
+                    {item.value}
+                  </p>
+                ))}
+              </div>
+            )}
+
             {summary.missing_info.length === 0 ? (
               <p className="muted">No missing information detected.</p>
             ) : (
               <form className="form-grid" onSubmit={saveMissingInfo}>
                 {summary.missing_info.map((item, index) => (
-                  <div className="card" key={index}>
-                    <h3 className="highlight">{item.field_name}</h3>
+                  <div className="card" key={item.missing_id || index}>
+                    <h3 className="highlight">
+                      {getMissingInfoLabel(item)}
+                    </h3>
                     <p style={{ marginBottom: "10px" }}>{item.question}</p>
                     {renderMissingInput(item)}
                   </div>
@@ -402,7 +737,7 @@ Important: This summary is for meeting preparation only and is not financial adv
                 <button
                   className="btn btn-primary"
                   type="submit"
-                  disabled={savingMissingInfo}
+                  disabled={savingMissingInfo || !hasMissingAnswers}
                 >
                   {savingMissingInfo ? "Saving..." : "Save Missing Information"}
                 </button>
@@ -423,15 +758,29 @@ Important: This summary is for meeting preparation only and is not financial adv
 
         <button
           className="btn btn-primary"
-          onClick={() => navigate("/book-meeting")}
+          onClick={handleContinueToMeeting}
         >
           Continue to Clarity Meeting Booking
         </button>
-
-        <button className="btn" onClick={() => navigate("/document-chat")}>
-          Back to Chat
-        </button>
       </div>
+
+      {showMeetingWarning && (
+        <div className="alert">
+          <strong>Several important details are still missing.</strong>{" "}
+          Continuing now may require your Prudential Financial Representative to
+          spend more time collecting basic information during the meeting, which
+          could slow down the discussion.
+          <div className="button-row" style={{ marginTop: "12px" }}>
+            <button
+              className="btn btn-primary"
+              type="button"
+              onClick={() => navigate("/book-meeting")}
+            >
+              Continue anyway
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

@@ -3,17 +3,35 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const openai = new OpenAI({
-  apiKey: process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY,
-  baseURL: process.env.GROQ_API_KEY
-    ? "https://api.groq.com/openai/v1"
-    : undefined
-});
+let openaiClient = null;
+
+function getOpenAIClient() {
+  const apiKey = process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY;
+
+  if (!apiKey) {
+    return null;
+  }
+
+  if (!openaiClient) {
+    openaiClient = new OpenAI({
+      apiKey,
+      baseURL: process.env.GROQ_API_KEY
+        ? "https://api.groq.com/openai/v1"
+        : undefined,
+    });
+  }
+
+  return openaiClient;
+}
 
 const DEFAULT_MODEL =
-  process.env.GROQ_MODEL ||
-  process.env.OPENAI_MODEL ||
-  "llama-3.1-8b-instant";
+  process.env.GROQ_MODEL || process.env.OPENAI_MODEL || "llama-3.1-8b-instant";
+
+const DEFAULT_NEXT_BEST_QUESTIONS = [
+  "What is your main goal: protection, wealth growth, income, or legacy planning?",
+  "What is your preferred monthly premium budget for this investment-linked plan?",
+  "How comfortable are you with investment values going up and down?",
+];
 
 function extractJson(text) {
   try {
@@ -34,19 +52,32 @@ function extractJson(text) {
 }
 
 async function runAIJson({ systemPrompt, userPrompt }) {
+  const openai = getOpenAIClient();
+
+  if (!openai) {
+    console.warn(
+      "AI provider API key is not configured. Returning deterministic fallback."
+    );
+
+    return {
+      rawText: "",
+      parsed: null,
+    };
+  }
+
   const response = await openai.chat.completions.create({
     model: DEFAULT_MODEL,
     messages: [
       {
         role: "system",
-        content: systemPrompt
+        content: systemPrompt,
       },
       {
         role: "user",
-        content: userPrompt
-      }
+        content: userPrompt,
+      },
     ],
-    temperature: 0.3
+    temperature: 0.3,
   });
 
   const rawText = response.choices?.[0]?.message?.content || "";
@@ -54,7 +85,7 @@ async function runAIJson({ systemPrompt, userPrompt }) {
 
   return {
     rawText,
-    parsed
+    parsed,
   };
 }
 
@@ -63,20 +94,25 @@ export async function askInsuranceAI({
   question,
   chatHistory,
   documentContext,
-  explanationMode = "simple"
+  explanationMode = "simple",
 }) {
-const systemPrompt = `
-You are PRUPath AI, a Prudential Singapore investment-linked insurance navigator for young working adults.
+  const systemPrompt = `
+You are Clarity, an agentic Prudential Singapore insurance interviewer for customer meeting preparation.
 
 Your role:
-1. Explain Prudential Singapore investment-linked insurance products in simple language.
+1. Explain Prudential insurance coverage, protection needs, wealth planning, product categories, and policy concepts in simple language.
 2. Personalize explanations using the customer's profile.
 3. Use the provided Prudential product context as your main source.
 4. Help the customer prepare for a meeting with a Prudential Financial Representative.
 5. Ask useful follow-up questions when information is missing.
+6. Save or highlight useful concerns, questions, and missing information for the Financial Representative.
+7. Map customer concerns to Health Protection, Life Protection, Wealth Accumulation, and Legacy Planning where possible.
+8. Reduce the Financial Representative's burden by collecting practical missing information from the customer before the meeting.
 
 Scope rules:
 1. You can only answer questions related to:
+   - Prudential insurance coverage and product categories
+   - Health Protection, Life Protection, Wealth Accumulation, and Legacy Planning
    - Prudential investment-linked insurance products in the provided product knowledge document
    - insurance terms explained in the provided context
    - customer profile preparation
@@ -92,22 +128,76 @@ Scope rules:
 4. If the question is partly related and partly unrelated, answer only the related Prudential insurance part.
 
 You are NOT a licensed financial advisor.
+It does not replace a Prudential Financial Representative and does not give final financial advice.
 
 Safety rules:
 1. Do not tell the customer exactly which product to buy.
-2. Do not say a product is definitely suitable.
+2. Do not say a product is definitely suitable or the best product to buy.
 3. Do not guarantee investment returns.
 4. Do not ignore risk, charges, premium commitment, surrender risk, or affordability.
 5. If the question needs professional advice, say that a Prudential Financial Representative should clarify it.
 6. If the document context does not contain enough information, say that the advisor should confirm the exact policy terms.
+7. Frame answers as preparation for a discussion with a Prudential Financial Representative.
+
+Product narrowing rules:
+1. Do not only answer the customer's question. After answering, help the customer narrow down which Prudential products may be relevant to discuss with a Prudential Financial Representative.
+2. Never say a product is definitely suitable or the best product to buy.
+3. Use phrases like: "may be relevant to discuss", "could be worth asking the advisor about", and "based on your stated goal, this product appears more aligned, but suitability must be confirmed by an advisor".
+4. Narrow products based on: main financial goal, risk appetite, monthly income/affordability, preferred currency, need for protection, desire for monthly income or dividends, long-term wealth growth, premium payment preference, and comfort with non-guaranteed returns.
+5. If important information is missing, ask targeted follow-up questions before narrowing too strongly.
+6. Ask no more than 3 follow-up questions at a time.
+7. Prioritize questions that help determine suitability, affordability, risk tolerance, and product direction.
+8. If the customer asks "which product is suitable for me", do not give a final recommendation. Instead, provide a shortlist of products to discuss and explain what information is still needed.
+9. When asking about premium budget, ask only for the monthly premium budget. Do not ask for annual premium budget.
+
+Product direction guide:
+- If the customer mainly wants protection, death coverage, terminal illness, total permanent disability, or critical illness discussion, PRUActive LinkGuard may be relevant to discuss.
+- If the customer wants investment-linked wealth growth with stronger Wealth Assure-style protection features, PRUVantage Assure Series may be relevant to discuss.
+- If the customer wants SGD-based long-term wealth planning, income potential, legacy planning, and access to PRUPrime CIO Funds, PRUVantage Wealth III (SGD) may be relevant to discuss.
+- If the customer specifically wants USD exposure or USD-denominated wealth planning, PRUVantage Wealth II (USD) may be relevant to discuss.
+- If the customer wants long-term wealth, possible dividends, Growth/Flex account planning, and legacy planning, PRUVantage Prosper may be relevant to discuss.
+- If the customer wants income, growth, protection, wealth continuity, and a shorter 5-year or 10-year premium term, PRUUnited Wealth may be relevant to discuss.
+- If the customer wants flexible investment-linked wealth growth with cash, CPF, or SRS funding, PRULink InvestGrowth may be relevant to discuss.
+- If the customer is unsure, ask about goal, premium budget, currency preference, protection need, risk appetite, and whether they want income or growth.
+
+Follow-up question priority:
+1. If main goal is missing, ask about goal.
+2. If premium budget or income is missing, ask about monthly affordability.
+3. If risk appetite is missing, ask about risk comfort.
+4. If product direction is unclear, ask income vs growth vs protection.
+5. If currency matters, ask SGD vs USD.
+6. If protection need is unclear, ask about existing insurance.
+7. If the customer is close to booking, ask what they want the advisor to explain first.
+8. The next_best_questions are questions Clarity should ask the customer directly during the interview, not generic suggestions.
+9. Ask the most important next question first so the customer can answer it in the chat input. The customer may also ask a different question instead.
 
 Return ONLY valid JSON in this exact format:
 {
   "answer": "simple customer-facing answer",
-  "related_product": "PRUVantage Assure Series / PRUVantage Wealth III (SGD) / PRUVantage Wealth II (USD) / PRUVantage Prosper / PRUUnited Wealth / PRULink InvestGrowth / PRUActive LinkGuard / General Prudential ILP",
+  "source_note": "Based on the PRUPath Product Knowledge Document, relevant section name.",
+  "related_product": "one short label only: Health Protection, Life Protection, Wealth Accumulation, Legacy Planning, PRUVantage Assure Series, PRUVantage Wealth III, PRUVantage Wealth II, PRUVantage Prosper, PRUUnited Wealth, PRULink InvestGrowth, PRUActive LinkGuard, or General Prudential ILP",
+  "product_shortlist": [
+    {
+      "product_name": "product name",
+      "relevance_score": 0,
+      "why_it_may_be_relevant": "short reason",
+      "what_to_clarify": "what advisor should confirm"
+    }
+  ],
+  "missing_customer_info": [
+    {
+      "field_name": "field name",
+      "question": "question to ask customer"
+    }
+  ],
+  "next_best_questions": [
+    "question 1",
+    "question 2",
+    "question 3"
+  ],
   "needs_advisor_clarification": true,
   "clarification_topic": "short topic that advisor should explain",
-  "follow_up_question": "one useful follow-up question to ask the customer"
+  "advisor_note": "short note for advisor"
 }
 `;
 
@@ -139,24 +229,36 @@ Answer the customer's question in a personalized but safe way.
 
   const { rawText, parsed } = await runAIJson({
     systemPrompt,
-    userPrompt
+    userPrompt,
   });
 
-  if (!parsed) {
-  return {
+  const defaultResult = {
     answer:
       "I can only help with questions related to Prudential investment-linked insurance products, your profile, product features, risks, charges, coverage, withdrawals, and preparing for a meeting with a Prudential Financial Representative.",
     source_note:
-      "Source: PRUPath Product Knowledge Document. The question was out of scope or unclear.",
+      "Based on the PRUPath Product Knowledge Document, the question was out of scope or unclear.",
     related_product: "General Prudential ILP",
+    product_shortlist: [],
+    missing_customer_info: [],
+    next_best_questions: DEFAULT_NEXT_BEST_QUESTIONS,
     needs_advisor_clarification: false,
     clarification_topic: "Out-of-scope or unclear question",
-    follow_up_question:
-      "Would you like to ask about product features, charges, risks, coverage, withdrawals, dividends, or meeting preparation?"
+    advisor_note:
+      "Advisor should confirm suitability, affordability, risks, charges, and policy terms.",
   };
-}
 
-  return parsed;
+  if (!parsed) {
+    return defaultResult;
+  }
+
+  return {
+    ...defaultResult,
+    ...parsed,
+    product_shortlist: parsed.product_shortlist || [],
+    missing_customer_info: parsed.missing_customer_info || [],
+    next_best_questions:
+      parsed.next_best_questions || DEFAULT_NEXT_BEST_QUESTIONS,
+  };
 }
 
 export async function generateAdvisorPrepAI({
@@ -167,7 +269,7 @@ export async function generateAdvisorPrepAI({
   missingInfo,
   concernTags,
   warnings,
-  readinessScore
+  readinessScore,
 }) {
   const systemPrompt = `
 You are PRUPath Advisor Assistant.
@@ -204,12 +306,26 @@ Important:
 
 Return ONLY valid JSON in this exact format:
 {
-  "answer": "simple customer-facing answer",
-  "source_note": "Based on the PRUPath Product Knowledge Document, [relevant section name].",
-  "related_product": "PRUVantage Assure Series / PRUVantage Wealth III (SGD) / PRUVantage Wealth II (USD) / PRUVantage Prosper / PRUUnited Wealth / PRULink InvestGrowth / PRUActive LinkGuard / General Prudential ILP",
-  "needs_advisor_clarification": true,
-  "clarification_topic": "short topic that advisor should explain",
-  "follow_up_question": "one useful follow-up question to ask the customer"
+  "customer_summary": "short advisor-facing summary of customer profile, goals, concerns, and meeting context",
+  "product_interest": "detected product interest",
+  "questions_asked": [
+    "customer question from the Clarity conversation"
+  ],
+  "clarification_points": [
+    "specific point the advisor should clarify"
+  ],
+  "missing_info": [
+    "missing or recently completed customer information to confirm"
+  ],
+  "advisor_questions": [
+    "question the advisor can ask during the meeting"
+  ],
+  "meeting_agenda": [
+    "timed agenda item"
+  ],
+  "checklist": [
+    "practical advisor checklist item"
+  ]
 }
 `;
 
@@ -243,7 +359,7 @@ Generate the advisor preparation summary.
 
   const { rawText, parsed } = await runAIJson({
     systemPrompt,
-    userPrompt
+    userPrompt,
   });
 
   if (!parsed) {
@@ -252,7 +368,7 @@ Generate the advisor preparation summary.
       product_interest: meeting.product_interest || "General Prudential ILP",
       questions_asked: questionLogs.map((q) => q.question),
       clarification_points: [
-        "Clarify product suitability, risks, charges, affordability, and policy terms."
+        "Clarify product suitability, risks, charges, affordability, and policy terms.",
       ],
       missing_info: missingInfo.map((m) => m.question || m.field_name),
       advisor_questions: [
@@ -260,14 +376,14 @@ Generate the advisor preparation summary.
         "How much can you comfortably commit without affecting your monthly needs?",
         "Are you comfortable with investment values going up and down?",
         "Do you already have existing insurance coverage?",
-        "What would you like to understand better before making a decision?"
+        "What would you like to understand better before making a decision?",
       ],
       meeting_agenda: [
         "5 min — Confirm customer profile and goals.",
         "5 min — Clarify missing information.",
         "10 min — Explain product risks, charges, and premium commitment.",
         "5 min — Discuss customer questions and concerns.",
-        "5 min — Confirm understanding and next steps."
+        "5 min — Confirm understanding and next steps.",
       ],
       checklist: [
         "Confirm the customer's financial goals.",
@@ -276,12 +392,207 @@ Generate the advisor preparation summary.
         "Explain charges and premium commitment.",
         "Clarify that returns are not guaranteed.",
         "Check affordability.",
-        "Confirm next steps with the customer."
-      ]
+        "Confirm next steps with the customer.",
+      ],
     };
   }
 
   return parsed;
+}
+
+export async function generateAdvisorMeetingAssistantAI({
+  customer,
+  meeting,
+  advisorSummary,
+  chatMessages,
+  questionLogs,
+  missingInfo,
+  currentMeetingNotes,
+  message,
+}) {
+  const fallback = {
+    reply:
+      "I can support the Financial Representative by explaining concepts, identifying missing information, and drafting discussion notes. The representative should confirm the customer's needs before making any recommendation.",
+    suggested_questions: [
+      "What outcome matters most to you: protection, wealth growth, income, or legacy planning?",
+      "What monthly commitment would feel comfortable after your essential expenses?",
+      "What existing coverage do you already have, and where do you feel exposed?",
+    ],
+    missing_information: (missingInfo || [])
+      .map((item) => item.question || item.field_name)
+      .filter(Boolean),
+    meeting_notes_update:
+      "Discussion note: Advisor should confirm customer goals, affordability, risk comfort, existing coverage, and next steps before discussing any specific product.",
+  };
+
+  const systemPrompt = `
+You are Clarity, an advisor-side AI copilot for Prudential Financial Representatives.
+
+Your role is to help the representative explain insurance concepts, clarify customer concerns, identify missing information, compare broad Prudential product categories, and draft meeting notes.
+
+You do not replace the representative, you do not make final financial recommendations, and you do not guarantee returns or outcomes. Use the available customer profile and meeting context. If information is missing, suggest what the representative should clarify.
+
+You may map discussion to broad product categories only:
+- Health Protection
+- Life Protection
+- Wealth Accumulation
+- Legacy Planning
+
+Return ONLY valid JSON in this exact format:
+{
+  "reply": "advisor-facing response",
+  "suggested_questions": ["question"],
+  "missing_information": ["missing item"],
+  "meeting_notes_update": "notes to append"
+}
+`;
+
+  const userPrompt = `
+CUSTOMER:
+${JSON.stringify(customer || null, null, 2)}
+
+MEETING:
+${JSON.stringify(meeting || null, null, 2)}
+
+ADVISOR SUMMARY:
+${JSON.stringify(advisorSummary || null, null, 2)}
+
+CUSTOMER CHAT MESSAGES:
+${JSON.stringify(chatMessages || [], null, 2)}
+
+QUESTION LOGS:
+${JSON.stringify(questionLogs || [], null, 2)}
+
+MISSING INFORMATION:
+${JSON.stringify(missingInfo || [], null, 2)}
+
+CURRENT MEETING NOTES:
+${currentMeetingNotes || "No notes yet."}
+
+ADVISOR MESSAGE:
+${message}
+`;
+
+  try {
+    const { rawText, parsed } = await runAIJson({
+      systemPrompt,
+      userPrompt,
+    });
+
+    if (!parsed) {
+      return {
+        ...fallback,
+        reply: rawText || fallback.reply,
+      };
+    }
+
+    return {
+      reply: String(parsed.reply || fallback.reply).trim(),
+      suggested_questions: Array.isArray(parsed.suggested_questions)
+        ? parsed.suggested_questions.filter(Boolean)
+        : fallback.suggested_questions,
+      missing_information: Array.isArray(parsed.missing_information)
+        ? parsed.missing_information.filter(Boolean)
+        : fallback.missing_information,
+      meeting_notes_update: String(
+        parsed.meeting_notes_update || fallback.meeting_notes_update,
+      ).trim(),
+    };
+  } catch (error) {
+    console.error("Advisor meeting assistant AI fallback:", error);
+    return fallback;
+  }
+}
+
+export async function selectMeetingSlotAI({
+  availabilityText,
+  customer,
+  productInterest,
+  candidateSlots,
+}) {
+  const systemPrompt = `
+You are Clarity, an AI meeting scheduling assistant for an insurance navigator prototype.
+Your job is to interpret the customer's natural language availability and choose the most suitable advisor slot from the real candidate slots provided by the backend.
+You must only choose from the provided slot IDs. Do not invent dates, times, advisors, or slot IDs.
+Consider meeting type, time-of-day preference, product interest, advisor specialisation, and earliest availability within the next 7 days.
+If meeting type is missing, use the customer profile preference if provided.
+If both user text and profile preference are missing, return meeting_type as unclear and do not select a slot.
+Return JSON only.
+
+Definitions:
+- Morning: 06:00 to 11:59
+- Afternoon: 12:00 to 16:59
+- Evening: 17:00 to 21:59
+
+Natural language guidance:
+- "any available slot", "anytime", "any time", "whatever is available", "earliest available", "as soon as possible", "soonest", "I'm flexible", "any day", and "any slot" mean time_preference "any" and should prefer the earliest suitable slot.
+- "every afternoon", "afternoons this week", or similar means time_preference "afternoon".
+- "weekday evenings" means time_preference "evening".
+- "mornings this week" means time_preference "morning".
+- "online", "Teams", or "online if possible" means meeting_type "Online".
+- "in person", "in-person", "offline", "physical", or "physical meeting" means meeting_type "In-person".
+
+Allowed time_preference values:
+- morning
+- afternoon
+- evening
+- any
+- unclear
+
+Allowed meeting_type values:
+- Online
+- In-person
+- unclear
+
+Return JSON in this exact format:
+{
+  "understood_availability": {
+    "summary": "Customer is free in the afternoons this week.",
+    "time_preference": "afternoon",
+    "meeting_type": "Online",
+    "flexibility": "medium",
+    "used_profile_meeting_type": false,
+    "profile_meeting_type_used": null
+  },
+  "selected_slot_id": 12,
+  "backup_slot_ids": [5, 18],
+  "advisor_reason": "The selected slot matches the customer's afternoon preference, online meeting preference, and the advisor's relevant specialisation.",
+  "user_message": "I found a suitable online afternoon slot within the next 7 days."
+}
+`;
+
+  const userPrompt = `
+CUSTOMER AVAILABILITY TEXT:
+${availabilityText}
+
+CUSTOMER PROFILE:
+${JSON.stringify(customer || null, null, 2)}
+
+PRODUCT INTEREST:
+${productInterest || "General Prudential ILP"}
+
+REAL CANDIDATE ADVISOR SLOTS:
+${JSON.stringify(candidateSlots || [], null, 2)}
+
+Choose only from the slot_id values in REAL CANDIDATE ADVISOR SLOTS.
+If the customer's meeting type is unclear and the customer profile has no preferred meeting type, set selected_slot_id to null and meeting_type to "unclear".
+`;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const { parsed } = await runAIJson({
+      systemPrompt,
+      userPrompt:
+        attempt === 0
+          ? userPrompt
+          : `${userPrompt}\n\nThe previous response was invalid. Return valid JSON only using the exact schema.`,
+    });
+
+    if (parsed) {
+      return parsed;
+    }
+  }
+
+  return null;
 }
 
 export async function extractSchedulePreferencesAI({ message, currentDate }) {
@@ -327,7 +638,7 @@ Extract the customer's meeting preferences.
 
   const { parsed } = await runAIJson({
     systemPrompt,
-    userPrompt
+    userPrompt,
   });
 
   if (!parsed) {
@@ -339,7 +650,7 @@ Extract the customer's meeting preferences.
       duration_minutes: 30,
       needs_clarification: true,
       clarification_question:
-        "Could you tell me your preferred meeting date, time range, and whether you prefer online or offline?"
+        "Could you tell me your preferred meeting date, time range, and whether you prefer online or offline?",
     };
   }
 
