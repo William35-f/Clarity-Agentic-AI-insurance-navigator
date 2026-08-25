@@ -27,6 +27,7 @@ const occupationOptions = [
 
 const singpassSampleProfile = {
   full_name: "Amanda Tan",
+  email: "amanda.tan@example.com",
   age: "28",
   occupation: "Marketing Executive",
   monthly_income: "6200",
@@ -42,6 +43,7 @@ function CustomerProfile() {
 
   const [formData, setFormData] = useState({
     full_name: "",
+    email: "",
     age: "",
     occupation: "",
     monthly_income: "",
@@ -81,6 +83,12 @@ function CustomerProfile() {
     if (!formData.full_name.trim()) {
       setMessageType("error");
       setMessage("Please enter your full name.");
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
+      setMessageType("error");
+      setMessage("Please enter a valid email for meeting follow-ups.");
       return;
     }
 
@@ -229,6 +237,19 @@ function CustomerProfile() {
                   value={formData.full_name}
                   onChange={handleChange}
                   placeholder="Enter your full name"
+                  required
+                />
+              </div>
+
+              <div className="field">
+                <label htmlFor="email">Email for follow-ups</label>
+                <input
+                  type="email"
+                  id="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  placeholder="name@example.com"
                   required
                 />
               </div>

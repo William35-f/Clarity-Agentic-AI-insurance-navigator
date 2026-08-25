@@ -7,6 +7,9 @@
   "scripts": {
     "dev": "nodemon server.js",
     "start": "node server.js",
+    "seed:demo": "node scripts/seedDemoMeetings.js",
+    "setup:post-meeting": "node scripts/setupPostMeetingRecords.js",
+    "setup:workflow": "node scripts/setupAdvisorWorkflow.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

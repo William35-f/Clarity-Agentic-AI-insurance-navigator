@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, Navigate, Route, Routes } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 
 import CustomerProfile from "./pages/customerprofile";
 import DocumentChat from "./pages/DocumentChat";
@@ -7,6 +7,8 @@ import CustomerSummary from "./pages/CustomerSummary";
 import BookMeeting from "./pages/BookMeeting";
 import AdvisorDashboard from "./pages/AdvisorDashboard";
 import AdvisorMeetingAssistant from "./pages/AdvisorMeetingAssistant";
+import AdvisorFollowUpAgent from "./pages/AdvisorFollowUpAgent";
+import AdvisorActivityLog from "./pages/AdvisorActivityLog";
 
 function DemoRoleGate({ allowedRole, currentRole, children }) {
   if (currentRole !== allowedRole) {
@@ -29,6 +31,10 @@ function DemoRoleGate({ allowedRole, currentRole, children }) {
   return children;
 }
 
+function navLinkClass({ isActive }) {
+  return isActive ? "app-nav-link app-nav-link--active" : "app-nav-link";
+}
+
 function App() {
   const [demoRole, setDemoRole] = useState(() => {
     return localStorage.getItem("demo_role") || "customer";
@@ -47,9 +53,16 @@ function App() {
           {demoRole === "advisor" && (
             <nav className="app-nav" aria-label="Primary navigation">
               <>
-                <Link to="/advisor-dashboard">Advisor Dashboard</Link>
-                <Link to="/advisor/meeting-assistant">Meeting Assistant</Link>
+                <NavLink className={navLinkClass} end to="/advisor-dashboard">Meeting Manager</NavLink>
+                <NavLink className={navLinkClass} to="/advisor/meeting-assistant">Meeting Assistant</NavLink>
+                <NavLink className={navLinkClass} to="/advisor/follow-up">Follow-up Agent</NavLink>
+                <NavLink className={navLinkClass} to="/advisor/activity">Activity Log</NavLink>
               </>
+            </nav>
+          )}
+          {demoRole === "customer" && (
+            <nav className="app-nav" aria-label="Primary navigation">
+              <NavLink className={navLinkClass} to="/customer-profile">Customer Journey</NavLink>
             </nav>
           )}
           <div className="role-switcher" aria-label="Demo role selector">
@@ -129,6 +142,22 @@ function App() {
           element={
             <DemoRoleGate allowedRole="advisor" currentRole={demoRole}>
               <AdvisorMeetingAssistant />
+            </DemoRoleGate>
+          }
+        />
+        <Route
+          path="/advisor/follow-up"
+          element={
+            <DemoRoleGate allowedRole="advisor" currentRole={demoRole}>
+              <AdvisorFollowUpAgent />
+            </DemoRoleGate>
+          }
+        />
+        <Route
+          path="/advisor/activity"
+          element={
+            <DemoRoleGate allowedRole="advisor" currentRole={demoRole}>
+              <AdvisorActivityLog />
             </DemoRoleGate>
           }
         />

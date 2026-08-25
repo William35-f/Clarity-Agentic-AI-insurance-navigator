@@ -77,7 +77,6 @@ async function runAIJson({ systemPrompt, userPrompt }) {
         content: userPrompt,
       },
     ],
-    temperature: 0.3,
   });
 
   const rawText = response.choices?.[0]?.message?.content || "";
@@ -445,6 +444,7 @@ Return ONLY valid JSON in this exact format:
   "missing_information": ["missing item"],
   "meeting_notes_update": "notes to append"
 }
+
 `;
 
   const userPrompt = `
@@ -500,6 +500,177 @@ ${message}
     };
   } catch (error) {
     console.error("Advisor meeting assistant AI fallback:", error);
+    return fallback;
+  }
+}
+
+export async function analyzeMeetingStatementAI({ statement, customer, meeting }) {
+  const text = String(statement || "").trim();
+  const misunderstandingPattern =
+    /guaranteed|fully covered|cover everything|every type|automatically covered|no risk|cannot lose|all expenses/i;
+  const detectedByRule = misunderstandingPattern.test(text);
+  const fallback = {
+    misunderstanding_detected: detectedByRule,
+    issue: detectedByRule
+      ? "The customer may be treating a conditional product feature or outcome as guaranteed."
+      : "",
+    advisor_action: detectedByRule
+      ? "Pause and confirm the customer's understanding. Explain the relevant conditions, exclusions, risks, charges, or non-guaranteed elements before continuing."
+      : "",
+    advisor_conduct_reminder: detectedByRule
+      ? "Keep the explanation balanced, verify the customer's understanding, disclose important limitations, and avoid presenting conditional benefits or outcomes as guaranteed."
+      : "",
+    source: detectedByRule
+      ? "PRUPath Product Knowledge Document — relevant product section and General Important Notes"
+      : "",
+    severity: detectedByRule ? "High" : "None",
+  };
+
+  const systemPrompt = `
+You are Clarity, an advisor-side consultation cue assistant.
+Analyze one customer statement for a possible misunderstanding about insurance coverage, guarantees, investment returns, exclusions, charges, premiums, withdrawals, or suitability.
+Do not make a product recommendation. Only flag a statement when clarification is genuinely useful.
+
+Return ONLY valid JSON:
+{
+  "misunderstanding_detected": true,
+  "issue": "short description",
+  "advisor_action": "specific safe clarification action",
+  "advisor_conduct_reminder": "practical reminder to support a clear, balanced and customer-focused explanation",
+  "source": "PRUPath Product Knowledge Document — relevant section",
+  "severity": "High, Medium, Low, or None"
+}
+
+`;
+  const userPrompt = `
+CUSTOMER PROFILE:
+${JSON.stringify(customer || null, null, 2)}
+
+MEETING:
+${JSON.stringify(meeting || null, null, 2)}
+
+CUSTOMER STATEMENT:
+${text}
+`;
+
+  try {
+    const { parsed } = await runAIJson({ systemPrompt, userPrompt });
+    if (!parsed) return fallback;
+
+    return {
+      misunderstanding_detected: Boolean(parsed.misunderstanding_detected),
+      issue: String(parsed.issue || "").trim(),
+      advisor_action: String(parsed.advisor_action || "").trim(),
+      advisor_conduct_reminder: String(
+        parsed.advisor_conduct_reminder || fallback.advisor_conduct_reminder
+      ).trim(),
+      source: String(parsed.source || fallback.source).trim(),
+      severity: String(parsed.severity || "None").trim(),
+    };
+  } catch (error) {
+    console.error("Meeting statement analysis fallback:", error);
+    return fallback;
+  }
+}
+
+export async function generatePostMeetingRecordAI({
+  customer,
+  meeting,
+  transcript,
+  notes,
+  checklist,
+}) {
+  const unresolved = (checklist || []).filter((item) => !item.completed);
+  const fallback = {
+    summary: `${customer?.full_name || "The customer"} completed a consultation about ${meeting?.product_interest || "insurance needs"}. The advisor reviewed the customer's goals, existing coverage, affordability, risk comfort, important limitations, and next steps.`,
+    follow_up_tasks: unresolved.map((item) => ({
+      task: `Follow up on unresolved checklist item: ${item.text}`,
+      owner: "Advisor",
+      completed: false,
+    })),
+  };
+
+  const systemPrompt = `
+You are Clarity, an advisor-side meeting documentation assistant.
+Create a concise factual post-meeting summary and practical follow-up tasks from the supplied transcript, notes, and checklist.
+Do not invent decisions, recommendations, consent, or completed actions. Unresolved checklist items must become follow-up tasks. Keep the advisor in control.
+
+Return ONLY valid JSON:
+{
+  "summary": "concise factual meeting summary",
+  "follow_up_tasks": [
+    { "task": "specific action", "owner": "Advisor or Customer", "completed": false }
+  ]
+}
+`;
+  const userPrompt = `
+CUSTOMER:
+${JSON.stringify(customer || null, null, 2)}
+
+MEETING:
+${JSON.stringify(meeting || null, null, 2)}
+
+TRANSCRIPT:
+${JSON.stringify(transcript || [], null, 2)}
+
+MEETING NOTES:
+${JSON.stringify(notes || [], null, 2)}
+
+CHECKLIST OUTCOMES:
+${JSON.stringify(checklist || [], null, 2)}
+`;
+
+  try {
+    const { parsed } = await runAIJson({ systemPrompt, userPrompt });
+    if (!parsed) return fallback;
+    return {
+      summary: String(parsed.summary || fallback.summary).trim(),
+      follow_up_tasks: Array.isArray(parsed.follow_up_tasks)
+        ? parsed.follow_up_tasks
+            .map((item) => ({
+              task: String(item?.task || "").trim(),
+              owner: item?.owner === "Customer" ? "Customer" : "Advisor",
+              completed: Boolean(item?.completed),
+            }))
+            .filter((item) => item.task)
+        : fallback.follow_up_tasks,
+    };
+  } catch (error) {
+    console.error("Post-meeting record AI fallback:", error);
+    return fallback;
+  }
+}
+
+export async function generateCustomerFollowUpAI({ customer, advisor, meeting, task, summary }) {
+  const fallback = {
+    subject: `Follow-up from your consultation with ${advisor?.full_name || "your advisor"}`,
+    body: `Hi ${customer?.full_name || "there"},\n\nThank you for meeting with us about ${meeting?.product_interest || "your insurance planning needs"}. As discussed, the next action is: ${task}.\n\nPlease reply through Clarity if you have any questions. Product suitability and final policy terms should be confirmed with your Financial Representative.\n\nRegards,\n${advisor?.full_name || "Your Financial Representative"}`,
+  };
+
+  const systemPrompt = `
+You are Clarity's Follow-up Agent for an insurance consultation.
+Draft a concise, warm customer follow-up message from an approved completed-meeting record.
+State the requested next action clearly. Do not invent commitments, recommendations, deadlines, attachments, or policy terms.
+Do not guarantee returns or imply that a product is suitable. The message must remain subject to advisor review.
+Return ONLY valid JSON: { "subject": "...", "body": "..." }
+`;
+  const userPrompt = `
+CUSTOMER: ${JSON.stringify(customer || null, null, 2)}
+ADVISOR: ${JSON.stringify(advisor || null, null, 2)}
+MEETING: ${JSON.stringify(meeting || null, null, 2)}
+APPROVED SUMMARY: ${summary || ""}
+FOLLOW-UP ACTION: ${task || ""}
+`;
+
+  try {
+    const { parsed } = await runAIJson({ systemPrompt, userPrompt });
+    if (!parsed) return fallback;
+    return {
+      subject: String(parsed.subject || fallback.subject).trim(),
+      body: String(parsed.body || fallback.body).trim(),
+    };
+  } catch (error) {
+    console.error("Customer follow-up AI fallback:", error);
     return fallback;
   }
 }

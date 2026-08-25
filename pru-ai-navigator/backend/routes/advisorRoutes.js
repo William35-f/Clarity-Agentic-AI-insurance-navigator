@@ -1,8 +1,11 @@
 import express from "express";
 import pool from "../db.js";
 import {
+  analyzeMeetingStatementAI,
+  generateCustomerFollowUpAI,
   generateAdvisorMeetingAssistantAI,
-  generateAdvisorPrepAI
+  generateAdvisorPrepAI,
+  generatePostMeetingRecordAI
 } from "../services/openaiService.js";
 
 const router = express.Router();
@@ -51,6 +54,64 @@ function normalizeArray(value) {
       return "";
     })
   );
+}
+
+function normalizeChecklistItems(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => ({
+      text: String(item?.text || item || "").trim(),
+      completed: Boolean(item?.completed)
+    }))
+    .filter((item) => item.text)
+    .slice(0, 30);
+}
+
+function normalizeFollowUpTasks(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => ({
+      task: String(item?.task || item || "").trim(),
+      owner: item?.owner === "Customer" ? "Customer" : "Advisor",
+      completed: Boolean(item?.completed),
+      outreach_sent_at: item?.outreach_sent_at || null,
+      outreach_subject: String(item?.outreach_subject || "").trim(),
+      outreach_recipient: String(item?.outreach_recipient || "").trim(),
+      outreach_delivery_reference: String(item?.outreach_delivery_reference || "").trim(),
+      outreach_delivery_status: String(item?.outreach_delivery_status || "").trim()
+    }))
+    .filter((item) => item.task)
+    .slice(0, 30);
+}
+
+function maskEmail(value) {
+  const [local, domain] = String(value || "").split("@");
+  if (!local || !domain) return "Email unavailable";
+  return `${local.slice(0, 1)}${"•".repeat(Math.max(3, local.length - 1))}@${domain}`;
+}
+
+async function logAdvisorActivity(executor, { advisorId, meetingId, activityType, title, details }) {
+  await executor.execute(
+    `INSERT INTO advisoractivitylog
+     (advisor_id, meeting_id, activity_type, title, details)
+     VALUES (?, ?, ?, ?, ?)`,
+    [advisorId || null, meetingId || null, activityType, title, details || null]
+  );
+}
+
+function parsePostMeetingRecord(record) {
+  return {
+    record_id: record.record_id,
+    meeting_id: record.meeting_id,
+    summary: record.summary,
+    notes: record.notes,
+    checklist: safeParseArray(record.checklist),
+    follow_up_tasks: safeParseArray(record.follow_up_tasks),
+    approval_status: record.approval_status,
+    approved_at: record.approved_at,
+    created_at: record.created_at,
+    updated_at: record.updated_at
+  };
 }
 
 async function buildAdvisorChatContext({ customerId, meetingId }) {
@@ -178,6 +239,122 @@ async function buildAdvisorChatContext({ customerId, meetingId }) {
 }
 
 router.use(requireAdvisorDemoRole);
+
+router.get("/advisors", async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT advisor_id, full_name, specialty, location
+       FROM advisor
+       ORDER BY full_name ASC`
+    );
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    console.error("Get advisors error:", error);
+    res.status(500).json({ success: false, message: "Failed to load advisors", error: error.message });
+  }
+});
+
+router.get("/availability", async (req, res) => {
+  try {
+    const advisorId = Number(req.query.advisor_id);
+    if (!advisorId) {
+      return res.status(400).json({ success: false, message: "advisor_id is required" });
+    }
+    const [rows] = await pool.execute(
+      `SELECT S.slot_id, S.advisor_id, S.start_datetime, S.end_datetime,
+              S.meeting_type, S.is_booked, A.full_name AS advisor_name
+       FROM advisorslot S
+       JOIN advisor A ON S.advisor_id = A.advisor_id
+       WHERE S.advisor_id = ?
+         AND S.start_datetime >= NOW()
+         AND S.start_datetime < DATE_ADD(NOW(), INTERVAL 7 DAY)
+       ORDER BY S.start_datetime ASC`,
+      [advisorId]
+    );
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    console.error("Get advisor availability error:", error);
+    res.status(500).json({ success: false, message: "Failed to load availability", error: error.message });
+  }
+});
+
+router.post("/availability", async (req, res) => {
+  try {
+    const advisorId = Number(req.body?.advisor_id);
+    const date = String(req.body?.date || "").trim();
+    const startTime = String(req.body?.start_time || "").trim();
+    const endTime = String(req.body?.end_time || "").trim();
+    const meetingType = req.body?.meeting_type === "Offline" ? "Offline" : "Online";
+
+    if (!advisorId || !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+        !/^\d{2}:\d{2}$/.test(startTime) || !/^\d{2}:\d{2}$/.test(endTime)) {
+      return res.status(400).json({ success: false, message: "Advisor, date, start time, and end time are required" });
+    }
+
+    const startDatetime = `${date} ${startTime}:00`;
+    const endDatetime = `${date} ${endTime}:00`;
+    const [validityRows] = await pool.execute(
+      `SELECT
+         (STR_TO_DATE(?, '%Y-%m-%d %H:%i:%s') > NOW()
+          AND STR_TO_DATE(?, '%Y-%m-%d %H:%i:%s') < DATE_ADD(NOW(), INTERVAL 7 DAY)
+          AND STR_TO_DATE(?, '%Y-%m-%d %H:%i:%s') > STR_TO_DATE(?, '%Y-%m-%d %H:%i:%s')) AS is_valid`,
+      [startDatetime, startDatetime, endDatetime, startDatetime]
+    );
+    if (!validityRows[0]?.is_valid) {
+      return res.status(400).json({
+        success: false,
+        message: "Availability must be in the future, end after it starts, and fall within the next 7 days"
+      });
+    }
+
+    const [advisorRows] = await pool.execute(
+      `SELECT advisor_id FROM advisor WHERE advisor_id = ?`,
+      [advisorId]
+    );
+    if (advisorRows.length === 0) {
+      return res.status(404).json({ success: false, message: "Advisor not found" });
+    }
+
+    const [conflicts] = await pool.execute(
+      `SELECT slot_id FROM advisorslot
+       WHERE advisor_id = ?
+         AND start_datetime < ?
+         AND end_datetime > ?
+       LIMIT 1`,
+      [advisorId, endDatetime, startDatetime]
+    );
+    if (conflicts.length > 0) {
+      return res.status(409).json({ success: false, message: "This time overlaps an existing advisor slot" });
+    }
+
+    const [result] = await pool.execute(
+      `INSERT INTO advisorslot
+       (advisor_id, start_datetime, end_datetime, meeting_type, is_booked)
+       VALUES (?, ?, ?, ?, FALSE)`,
+      [advisorId, startDatetime, endDatetime, meetingType]
+    );
+    res.status(201).json({ success: true, slot_id: result.insertId, message: "Availability added for customer matching" });
+  } catch (error) {
+    console.error("Add advisor availability error:", error);
+    res.status(500).json({ success: false, message: "Failed to add availability", error: error.message });
+  }
+});
+
+router.delete("/availability/:slotId", async (req, res) => {
+  try {
+    const [result] = await pool.execute(
+      `DELETE FROM advisorslot WHERE slot_id = ? AND is_booked = FALSE`,
+      [req.params.slotId]
+    );
+    if (result.affectedRows === 0) {
+      return res.status(409).json({ success: false, message: "Booked or missing slots cannot be removed" });
+    }
+    res.json({ success: true, message: "Availability removed" });
+  } catch (error) {
+    console.error("Remove advisor availability error:", error);
+    res.status(500).json({ success: false, message: "Failed to remove availability", error: error.message });
+  }
+});
 
 function buildAdvisorPrepFallback({
   meeting,
@@ -353,6 +530,40 @@ router.post("/chat", async (req, res) => {
   }
 });
 
+router.post("/meetings/:meetingId/analyze-statement", async (req, res) => {
+  try {
+    const statement = String(req.body?.statement || "").trim();
+    if (!statement) {
+      return res.status(400).json({
+        success: false,
+        message: "Customer statement is required"
+      });
+    }
+
+    const context = await buildAdvisorChatContext({
+      meetingId: req.params.meetingId
+    });
+    if (!context.meeting) {
+      return res.status(404).json({ success: false, message: "Meeting not found" });
+    }
+
+    const analysis = await analyzeMeetingStatementAI({
+      statement,
+      customer: context.customer,
+      meeting: context.meeting
+    });
+
+    res.json({ success: true, data: analysis });
+  } catch (error) {
+    console.error("Meeting statement analysis error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to analyze customer statement",
+      error: error.message
+    });
+  }
+});
+
 function mergeAdvisorPrepSummary(aiSummary, fallback) {
   return {
     customer_summary:
@@ -505,18 +716,59 @@ router.get("/meetings", async (req, res) => {
         C.main_goal,
         C.risk_appetite,
 
+        (SELECT COUNT(*)
+         FROM missinginfo MI
+         WHERE MI.customer_id = C.customer_id
+           AND MI.is_answered = FALSE) AS missing_info_count,
+
+        (SELECT COUNT(*)
+         FROM questionlog QL
+         WHERE QL.customer_id = C.customer_id
+           AND QL.needs_advisor_clarification = TRUE) AS clarification_count,
+
+        EXISTS(
+          SELECT 1
+          FROM advisorsummary APS
+          WHERE APS.meeting_id = M.meeting_id
+        ) AS has_prep_summary,
+
+        PM.approval_status AS post_meeting_status,
+        PM.follow_up_tasks,
+
+        CASE
+          WHEN LOWER(M.status) = 'completed' THEN 'Completed'
+          WHEN EXISTS(
+            SELECT 1 FROM advisorsummary APS2 WHERE APS2.meeting_id = M.meeting_id
+          ) THEN 'Ready'
+          WHEN EXISTS(
+            SELECT 1 FROM missinginfo MI2
+            WHERE MI2.customer_id = C.customer_id AND MI2.is_answered = FALSE
+          ) THEN 'Needs attention'
+          ELSE 'Not started'
+        END AS preparation_status,
+
         A.advisor_id,
         A.full_name AS advisor_name,
         A.specialty AS advisor_specialty
        FROM meeting M
        JOIN customer C ON M.customer_id = C.customer_id
        JOIN advisor A ON M.advisor_id = A.advisor_id
+       LEFT JOIN postmeetingrecord PM ON M.meeting_id = PM.meeting_id
        ORDER BY M.meeting_datetime DESC`
     );
 
     res.json({
       success: true,
-      data: rows
+      data: rows.map((row) => {
+        const followUpTasks = safeParseArray(row.follow_up_tasks);
+        const { follow_up_tasks: _followUpTasks, ...meeting } = row;
+        return {
+          ...meeting,
+          follow_up_total: followUpTasks.length,
+          follow_up_completed: followUpTasks.filter((task) => Boolean(task?.completed)).length,
+          follow_up_sent: followUpTasks.filter((task) => Boolean(task?.outreach_sent_at)).length
+        };
+      })
     });
   } catch (error) {
     console.error("Get advisor meetings error:", error);
@@ -814,6 +1066,56 @@ router.post("/meetings/:meetingId/generate-summary", async (req, res) => {
   }
 });
 
+router.put("/meetings/:meetingId/summary/checklist", async (req, res) => {
+  try {
+    const checklist = Array.isArray(req.body?.checklist)
+      ? uniqueNonEmpty(req.body.checklist).slice(0, 30)
+      : null;
+
+    if (!checklist || checklist.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "At least one checklist item is required"
+      });
+    }
+
+    const [summaryRows] = await pool.execute(
+      `SELECT summary_id
+       FROM advisorsummary
+       WHERE meeting_id = ?
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [req.params.meetingId]
+    );
+
+    if (summaryRows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Generate the preparation summary before editing its checklist"
+      });
+    }
+
+    await pool.execute(
+      `UPDATE advisorsummary
+       SET checklist = ?
+       WHERE summary_id = ?`,
+      [JSON.stringify(checklist), summaryRows[0].summary_id]
+    );
+
+    res.json({
+      success: true,
+      data: { checklist }
+    });
+  } catch (error) {
+    console.error("Update advisor checklist error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update advisor checklist",
+      error: error.message
+    });
+  }
+});
+
 router.get("/meetings/:meetingId/summary", async (req, res) => {
   try {
     const meetingId = req.params.meetingId;
@@ -860,6 +1162,413 @@ router.get("/meetings/:meetingId/summary", async (req, res) => {
       message: "Failed to get advisor summary",
       error: error.message
     });
+  }
+});
+
+router.get("/meetings/:meetingId/post-meeting", async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT * FROM postmeetingrecord WHERE meeting_id = ? LIMIT 1`,
+      [req.params.meetingId]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: "Post-meeting record not found" });
+    }
+    res.json({ success: true, data: parsePostMeetingRecord(rows[0]) });
+  } catch (error) {
+    console.error("Get post-meeting record error:", error);
+    res.status(500).json({ success: false, message: "Failed to load post-meeting record", error: error.message });
+  }
+});
+
+router.post("/meetings/:meetingId/post-meeting/generate", async (req, res) => {
+  try {
+    const context = await buildAdvisorChatContext({ meetingId: req.params.meetingId });
+    if (!context.meeting) {
+      return res.status(404).json({ success: false, message: "Meeting not found" });
+    }
+
+    const checklist = normalizeChecklistItems(req.body?.checklist);
+    const transcript = Array.isArray(req.body?.transcript) ? req.body.transcript : [];
+    const notes = Array.isArray(req.body?.notes) ? req.body.notes : [];
+    const generated = await generatePostMeetingRecordAI({
+      customer: context.customer,
+      meeting: context.meeting,
+      transcript,
+      notes,
+      checklist
+    });
+    const notesText = notes.map((item) => String(item || "").trim()).filter(Boolean).join("\n\n");
+
+    await pool.execute(
+      `INSERT INTO postmeetingrecord
+       (meeting_id, summary, notes, checklist, follow_up_tasks, approval_status)
+       VALUES (?, ?, ?, ?, ?, 'Draft')
+       ON DUPLICATE KEY UPDATE
+         summary = VALUES(summary), notes = VALUES(notes), checklist = VALUES(checklist),
+         follow_up_tasks = VALUES(follow_up_tasks), approval_status = 'Draft', approved_at = NULL`,
+      [
+        req.params.meetingId,
+        generated.summary,
+        notesText,
+        JSON.stringify(checklist),
+        JSON.stringify(generated.follow_up_tasks)
+      ]
+    );
+
+    const [rows] = await pool.execute(
+      `SELECT * FROM postmeetingrecord WHERE meeting_id = ? LIMIT 1`,
+      [req.params.meetingId]
+    );
+    res.json({ success: true, data: parsePostMeetingRecord(rows[0]) });
+  } catch (error) {
+    console.error("Generate post-meeting record error:", error);
+    res.status(500).json({ success: false, message: "Failed to generate post-meeting record", error: error.message });
+  }
+});
+
+router.put("/meetings/:meetingId/post-meeting", async (req, res) => {
+  try {
+    const summary = String(req.body?.summary || "").trim();
+    const notes = String(req.body?.notes || "").trim();
+    const checklist = normalizeChecklistItems(req.body?.checklist);
+    const followUpTasks = normalizeFollowUpTasks(req.body?.follow_up_tasks);
+    if (!summary) {
+      return res.status(400).json({ success: false, message: "Post-meeting summary is required" });
+    }
+
+    const [result] = await pool.execute(
+      `UPDATE postmeetingrecord
+       SET summary = ?, notes = ?, checklist = ?, follow_up_tasks = ?
+       WHERE meeting_id = ?`,
+      [summary, notes, JSON.stringify(checklist), JSON.stringify(followUpTasks), req.params.meetingId]
+    );
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, message: "Post-meeting record not found" });
+    }
+    const [rows] = await pool.execute(
+      `SELECT * FROM postmeetingrecord WHERE meeting_id = ? LIMIT 1`,
+      [req.params.meetingId]
+    );
+    res.json({ success: true, data: parsePostMeetingRecord(rows[0]) });
+  } catch (error) {
+    console.error("Save post-meeting record error:", error);
+    res.status(500).json({ success: false, message: "Failed to save post-meeting record", error: error.message });
+  }
+});
+
+router.post("/meetings/:meetingId/post-meeting/approve", async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const summary = String(req.body?.summary || "").trim();
+    const notes = String(req.body?.notes || "").trim();
+    const checklist = normalizeChecklistItems(req.body?.checklist);
+    const followUpTasks = normalizeFollowUpTasks(req.body?.follow_up_tasks);
+    if (!summary) {
+      await connection.rollback();
+      return res.status(400).json({ success: false, message: "Review the summary before approval" });
+    }
+
+    const [result] = await connection.execute(
+      `UPDATE postmeetingrecord
+       SET summary = ?, notes = ?, checklist = ?, follow_up_tasks = ?,
+           approval_status = 'Approved', approved_at = NOW()
+       WHERE meeting_id = ?`,
+      [summary, notes, JSON.stringify(checklist), JSON.stringify(followUpTasks), req.params.meetingId]
+    );
+    if (result.affectedRows === 0) {
+      await connection.rollback();
+      return res.status(404).json({ success: false, message: "Post-meeting record not found" });
+    }
+    await connection.execute(
+      `UPDATE meeting SET status = 'Completed' WHERE meeting_id = ?`,
+      [req.params.meetingId]
+    );
+    const [activityRows] = await connection.execute(
+      `SELECT M.advisor_id, C.full_name AS customer_name
+       FROM meeting M JOIN customer C ON M.customer_id = C.customer_id
+       WHERE M.meeting_id = ? LIMIT 1`,
+      [req.params.meetingId]
+    );
+    if (activityRows[0]) {
+      await logAdvisorActivity(connection, {
+        advisorId: activityRows[0].advisor_id,
+        meetingId: Number(req.params.meetingId),
+        activityType: "MEETING_APPROVED",
+        title: `Approved completed record for ${activityRows[0].customer_name}`,
+        details: "Meeting record approved and released to the Follow-up Agent."
+      });
+    }
+    await connection.commit();
+
+    const [rows] = await pool.execute(
+      `SELECT * FROM postmeetingrecord WHERE meeting_id = ? LIMIT 1`,
+      [req.params.meetingId]
+    );
+    res.json({ success: true, data: parsePostMeetingRecord(rows[0]) });
+  } catch (error) {
+    await connection.rollback();
+    console.error("Approve post-meeting record error:", error);
+    res.status(500).json({ success: false, message: "Failed to approve post-meeting record", error: error.message });
+  } finally {
+    connection.release();
+  }
+});
+
+router.get("/follow-up-tasks", async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT PM.record_id, PM.meeting_id, PM.follow_up_tasks, PM.approval_status,
+              PM.updated_at, M.meeting_datetime, M.product_interest, M.status AS meeting_status,
+              C.customer_id, C.full_name AS customer_name,
+              A.full_name AS advisor_name
+       FROM postmeetingrecord PM
+       JOIN meeting M ON PM.meeting_id = M.meeting_id
+       JOIN customer C ON M.customer_id = C.customer_id
+       JOIN advisor A ON M.advisor_id = A.advisor_id
+       WHERE PM.approval_status = 'Approved' AND LOWER(M.status) = 'completed'
+       ORDER BY PM.updated_at DESC`
+    );
+
+    const tasks = rows.flatMap((row) =>
+      safeParseArray(row.follow_up_tasks).map((task, taskIndex) => ({
+        record_id: row.record_id,
+        meeting_id: row.meeting_id,
+        task_index: taskIndex,
+        task: String(task?.task || task || "").trim(),
+        owner: task?.owner === "Customer" ? "Customer" : "Advisor",
+        completed: Boolean(task?.completed),
+        outreach_sent_at: task?.outreach_sent_at || null,
+        outreach_subject: String(task?.outreach_subject || "").trim(),
+        outreach_recipient: String(task?.outreach_recipient || "").trim(),
+        outreach_delivery_reference: String(task?.outreach_delivery_reference || "").trim(),
+        outreach_delivery_status: String(task?.outreach_delivery_status || "").trim(),
+        approval_status: row.approval_status,
+        meeting_status: row.meeting_status,
+        customer_id: row.customer_id,
+        customer_name: row.customer_name,
+        advisor_name: row.advisor_name,
+        meeting_datetime: row.meeting_datetime,
+        product_interest: row.product_interest,
+        updated_at: row.updated_at
+      }))
+    ).filter((task) => task.task);
+
+    res.json({ success: true, data: tasks });
+  } catch (error) {
+    console.error("Get follow-up tasks error:", error);
+    res.status(500).json({ success: false, message: "Failed to load follow-up tasks", error: error.message });
+  }
+});
+
+router.put("/follow-up-tasks/:recordId/:taskIndex", async (req, res) => {
+  try {
+    const recordId = Number(req.params.recordId);
+    const taskIndex = Number(req.params.taskIndex);
+    const [rows] = await pool.execute(
+      `SELECT PM.follow_up_tasks, PM.meeting_id, M.advisor_id, C.full_name AS customer_name
+       FROM postmeetingrecord PM
+       JOIN meeting M ON PM.meeting_id = M.meeting_id
+       JOIN customer C ON M.customer_id = C.customer_id
+       WHERE PM.record_id = ? LIMIT 1`,
+      [recordId]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: "Follow-up record not found" });
+    }
+
+    const tasks = safeParseArray(rows[0].follow_up_tasks);
+    if (!Number.isInteger(taskIndex) || taskIndex < 0 || taskIndex >= tasks.length) {
+      return res.status(404).json({ success: false, message: "Follow-up task not found" });
+    }
+
+    const updatedTask = {
+      task: String(req.body?.task ?? tasks[taskIndex]?.task ?? "").trim(),
+      owner: req.body?.owner === "Customer" ? "Customer" : "Advisor",
+      completed: Boolean(req.body?.completed),
+      outreach_sent_at: tasks[taskIndex]?.outreach_sent_at || null,
+      outreach_subject: String(tasks[taskIndex]?.outreach_subject || "").trim(),
+      outreach_recipient: String(tasks[taskIndex]?.outreach_recipient || "").trim(),
+      outreach_delivery_reference: String(tasks[taskIndex]?.outreach_delivery_reference || "").trim(),
+      outreach_delivery_status: String(tasks[taskIndex]?.outreach_delivery_status || "").trim()
+    };
+    if (!updatedTask.task) {
+      return res.status(400).json({ success: false, message: "Task description is required" });
+    }
+
+    tasks[taskIndex] = updatedTask;
+    await pool.execute(
+      `UPDATE postmeetingrecord SET follow_up_tasks = ? WHERE record_id = ?`,
+      [JSON.stringify(tasks), recordId]
+    );
+    await logAdvisorActivity(pool, {
+      advisorId: rows[0].advisor_id,
+      meetingId: rows[0].meeting_id,
+      activityType: "FOLLOW_UP_UPDATED",
+      title: `Updated follow-up for ${rows[0].customer_name}`,
+      details: `${updatedTask.owner} task marked ${updatedTask.completed ? "completed" : "open"}: ${updatedTask.task}`
+    });
+    res.json({ success: true, data: updatedTask });
+  } catch (error) {
+    console.error("Update follow-up task error:", error);
+    res.status(500).json({ success: false, message: "Failed to update follow-up task", error: error.message });
+  }
+});
+
+router.post("/follow-up-tasks/:recordId/:taskIndex/generate-message", async (req, res) => {
+  try {
+    const recordId = Number(req.params.recordId);
+    const taskIndex = Number(req.params.taskIndex);
+    const [rows] = await pool.execute(
+      `SELECT PM.summary, PM.follow_up_tasks, PM.approval_status,
+              M.meeting_id, M.meeting_datetime, M.product_interest, M.status,
+              C.customer_id, C.full_name AS customer_name,
+              A.advisor_id, A.full_name AS advisor_name
+       FROM postmeetingrecord PM
+       JOIN meeting M ON PM.meeting_id = M.meeting_id
+       JOIN customer C ON M.customer_id = C.customer_id
+       JOIN advisor A ON M.advisor_id = A.advisor_id
+       WHERE PM.record_id = ? LIMIT 1`,
+      [recordId]
+    );
+    if (rows.length === 0) return res.status(404).json({ success: false, message: "Follow-up record not found" });
+    const row = rows[0];
+    if (row.approval_status !== "Approved" || String(row.status).toLowerCase() !== "completed") {
+      return res.status(409).json({ success: false, message: "Customer outreach is available only for approved completed meetings" });
+    }
+    const tasks = safeParseArray(row.follow_up_tasks);
+    if (!Number.isInteger(taskIndex) || taskIndex < 0 || taskIndex >= tasks.length) {
+      return res.status(404).json({ success: false, message: "Follow-up task not found" });
+    }
+    const message = await generateCustomerFollowUpAI({
+      customer: { customer_id: row.customer_id, full_name: row.customer_name },
+      advisor: { advisor_id: row.advisor_id, full_name: row.advisor_name },
+      meeting: { meeting_id: row.meeting_id, meeting_datetime: row.meeting_datetime, product_interest: row.product_interest },
+      task: String(tasks[taskIndex]?.task || "").trim(),
+      summary: row.summary
+    });
+    await logAdvisorActivity(pool, {
+      advisorId: row.advisor_id,
+      meetingId: row.meeting_id,
+      activityType: "EMAIL_DRAFT_GENERATED",
+      title: `Generated email draft for ${row.customer_name}`,
+      details: message.subject
+    });
+    res.json({ success: true, data: message });
+  } catch (error) {
+    console.error("Generate customer follow-up error:", error);
+    res.status(500).json({ success: false, message: "Failed to generate customer message", error: error.message });
+  }
+});
+
+router.post("/follow-up-tasks/:recordId/:taskIndex/send-message", async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const recordId = Number(req.params.recordId);
+    const taskIndex = Number(req.params.taskIndex);
+    const subject = String(req.body?.subject || "").trim();
+    const body = String(req.body?.body || "").trim();
+    if (!subject || !body) {
+      await connection.rollback();
+      return res.status(400).json({ success: false, message: "Review the subject and message before sending" });
+    }
+    const [rows] = await connection.execute(
+      `SELECT PM.meeting_id, PM.follow_up_tasks, PM.approval_status,
+              M.status, M.customer_id, M.advisor_id,
+              C.full_name AS customer_name, CC.email AS customer_email
+       FROM postmeetingrecord PM
+       JOIN meeting M ON PM.meeting_id = M.meeting_id
+       JOIN customer C ON M.customer_id = C.customer_id
+       LEFT JOIN customercontact CC ON M.customer_id = CC.customer_id
+       WHERE PM.record_id = ? FOR UPDATE`,
+      [recordId]
+    );
+    if (rows.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({ success: false, message: "Follow-up record not found" });
+    }
+    const row = rows[0];
+    if (row.approval_status !== "Approved" || String(row.status).toLowerCase() !== "completed") {
+      await connection.rollback();
+      return res.status(409).json({ success: false, message: "Only completed meeting follow-ups can be sent" });
+    }
+    if (!row.customer_email) {
+      await connection.rollback();
+      return res.status(409).json({ success: false, message: "Add a customer email before sending this follow-up" });
+    }
+    const tasks = safeParseArray(row.follow_up_tasks);
+    if (!Number.isInteger(taskIndex) || taskIndex < 0 || taskIndex >= tasks.length) {
+      await connection.rollback();
+      return res.status(404).json({ success: false, message: "Follow-up task not found" });
+    }
+    const sentAt = new Date().toISOString();
+    const deliveryReference = `CL-${Date.now().toString(36).toUpperCase()}-${recordId}`;
+    const maskedRecipient = maskEmail(row.customer_email);
+    tasks[taskIndex] = {
+      ...tasks[taskIndex],
+      outreach_sent_at: sentAt,
+      outreach_subject: subject,
+      outreach_recipient: maskedRecipient,
+      outreach_delivery_reference: deliveryReference,
+      outreach_delivery_status: "Demo delivered"
+    };
+    await connection.execute(
+      `INSERT INTO advisoremailpreview
+       (meeting_id, subject, body, recipient_email, delivery_status, delivery_reference)
+       VALUES (?, ?, ?, ?, 'Demo delivered', ?)`,
+      [row.meeting_id, subject, body, row.customer_email, deliveryReference]
+    );
+    await connection.execute(
+      `UPDATE postmeetingrecord SET follow_up_tasks = ? WHERE record_id = ?`,
+      [JSON.stringify(tasks), recordId]
+    );
+    await logAdvisorActivity(connection, {
+      advisorId: row.advisor_id,
+      meetingId: row.meeting_id,
+      activityType: "DEMO_EMAIL_SENT",
+      title: `Sent follow-up email to ${row.customer_name}`,
+      details: `${subject} · ${maskedRecipient} · ${deliveryReference}`
+    });
+    await connection.commit();
+    res.json({
+      success: true,
+      data: {
+        customer_id: row.customer_id,
+        sent_at: sentAt,
+        subject,
+        masked_recipient: maskedRecipient,
+        delivery_reference: deliveryReference,
+        delivery_status: "Demo delivered"
+      }
+    });
+  } catch (error) {
+    await connection.rollback();
+    console.error("Send customer follow-up error:", error);
+    res.status(500).json({ success: false, message: "Failed to send customer message", error: error.message });
+  } finally {
+    connection.release();
+  }
+});
+
+router.get("/activities", async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT L.activity_id, L.activity_type, L.title, L.details, L.created_at,
+              L.meeting_id, A.full_name AS advisor_name, C.full_name AS customer_name,
+              M.product_interest
+       FROM advisoractivitylog L
+       LEFT JOIN advisor A ON L.advisor_id = A.advisor_id
+       LEFT JOIN meeting M ON L.meeting_id = M.meeting_id
+       LEFT JOIN customer C ON M.customer_id = C.customer_id
+       ORDER BY L.created_at DESC, L.activity_id DESC
+       LIMIT 100`
+    );
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    console.error("Get advisor activities error:", error);
+    res.status(500).json({ success: false, message: "Failed to load advisor activities", error: error.message });
   }
 });
 

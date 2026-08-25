@@ -91,6 +91,7 @@ router.post("/", async (req, res) => {
   try {
     const {
       full_name,
+      email,
       age,
       occupation,
       monthly_income,
@@ -101,6 +102,7 @@ router.post("/", async (req, res) => {
     } = req.body || {};
 
     const cleanFullName = String(full_name || "").trim();
+    const cleanEmail = String(email || "").trim().toLowerCase();
     const cleanOccupation = String(occupation || "").trim();
     const cleanRiskAppetite = String(risk_appetite || "").trim().toLowerCase();
     const cleanMainGoal = String(main_goal || "").trim();
@@ -114,6 +116,10 @@ router.post("/", async (req, res) => {
         success: false,
         message: "Full name is required"
       });
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      return res.status(400).json({ success: false, message: "A valid email is required for follow-ups" });
     }
 
     const cleanAge =
@@ -203,6 +209,12 @@ router.post("/", async (req, res) => {
         cleanExistingInsurance || null,
         cleanPreferredMeetingType
       ]
+    );
+
+    await pool.execute(
+      `INSERT INTO customercontact (customer_id, email) VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE email = VALUES(email)`,
+      [result.insertId, cleanEmail]
     );
 
     res.json({
