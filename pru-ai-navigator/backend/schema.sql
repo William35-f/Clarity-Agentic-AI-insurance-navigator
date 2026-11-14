@@ -44,7 +44,7 @@ CREATE TABLE `advisor` (
 
 LOCK TABLES `advisor` WRITE;
 /*!40000 ALTER TABLE `advisor` DISABLE KEYS */;
-INSERT INTO `advisor` VALUES (1,'Sarah Lim','YOUR_EMAIL+advisor1@gmail.com','PRULink InvestGrowth',NULL,1),(2,'Daniel Tan','YOUR_EMAIL+advisor2@gmail.com','PRUActive LinkGuard',NULL,0),(3,'Aisha Rahman','YOUR_EMAIL+advisor3@gmail.com','PRUVantage Prosper',NULL,0),(4,'Marcus Lee','YOUR_EMAIL+advisor4@gmail.com','General Prudential ILP',NULL,1),(5,'Clara Wong','YOUR_EMAIL+advisor5@gmail.com','PRUVantage Assure Series',NULL,1),(6,'Ethan Ng','YOUR_EMAIL+advisor6@gmail.com','PRUVantage Wealth III (SGD)',NULL,2),(7,'Nadia Koh','YOUR_EMAIL+advisor7@gmail.com','PRUVantage Wealth II (USD)',NULL,0),(8,'Jason Teo','YOUR_EMAIL+advisor8@gmail.com','PRUUnited Wealth',NULL,1);
+INSERT INTO `advisor` VALUES (1,'Wilson','wilson.advisor@example.com','General Prudential ILP',NULL,1),(2,'Daniel Tan','YOUR_EMAIL+advisor2@gmail.com','PRUActive LinkGuard',NULL,0),(3,'Aisha Rahman','YOUR_EMAIL+advisor3@gmail.com','PRUVantage Prosper',NULL,0),(4,'Marcus Lee','YOUR_EMAIL+advisor4@gmail.com','General Prudential ILP',NULL,1),(5,'Clara Wong','YOUR_EMAIL+advisor5@gmail.com','PRUVantage Assure Series',NULL,1),(6,'Ethan Ng','YOUR_EMAIL+advisor6@gmail.com','PRUVantage Wealth III (SGD)',NULL,2),(7,'Nadia Koh','YOUR_EMAIL+advisor7@gmail.com','PRUVantage Wealth II (USD)',NULL,0),(8,'Jason Teo','YOUR_EMAIL+advisor8@gmail.com','PRUUnited Wealth',NULL,1);
 /*!40000 ALTER TABLE `advisor` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -476,6 +476,12 @@ INSERT INTO `advisorslot`
   (`advisor_id`, `start_datetime`, `end_datetime`, `meeting_type`, `is_booked`)
 VALUES
   (1, TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 1 DAY), '09:00:00'), TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 1 DAY), '09:30:00'), 'Online', 0),
+  (1, TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 1 DAY), '16:00:00'), TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 1 DAY), '16:30:00'), 'Offline', 0),
+  (1, TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 2 DAY), '10:00:00'), TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 2 DAY), '10:30:00'), 'Online', 0),
+  (1, TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 3 DAY), '11:00:00'), TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 3 DAY), '11:30:00'), 'Online', 0),
+  (1, TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 4 DAY), '15:00:00'), TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 4 DAY), '15:30:00'), 'Online', 0),
+  (1, TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 5 DAY), '10:00:00'), TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 5 DAY), '10:30:00'), 'Offline', 0),
+  (1, TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 6 DAY), '14:00:00'), TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 6 DAY), '14:30:00'), 'Online', 0),
   (2, TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 1 DAY), '14:00:00'), TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 1 DAY), '14:30:00'), 'Offline', 0),
   (3, TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 2 DAY), '11:00:00'), TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 2 DAY), '11:30:00'), 'Online', 0),
   (4, TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 2 DAY), '19:00:00'), TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 2 DAY), '19:30:00'), 'Online', 0),

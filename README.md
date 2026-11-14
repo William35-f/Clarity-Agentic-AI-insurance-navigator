@@ -61,12 +61,20 @@ The frontend runs on `http://localhost:5173` by default.
 ### Demo follow-up flow
 
 1. Switch to **Advisor** and open **Meeting Manager**.
-2. Complete and approve a meeting record in **Meeting Assistant**.
-3. Open **Follow-up Agent**. Its queue contains only approved records whose
+2. Open **Meeting Assistant** and advance the consultation. The full-width
+   video-call workspace shows advisor and customer live captions while
+   **Clarity Meeting Support** presents misunderstanding flags, independent
+   conduct reminders, and policy/document sources together. Statement analysis
+   runs in an ordered background queue, so the call can continue while Clarity
+   prepares the next cue. The source link opens the
+   relevant official Prudential product page while exact terms remain subject
+   to the current product summary and policy documents.
+3. Complete and approve the meeting record.
+4. Open **Follow-up Agent**. Its queue contains only approved records whose
    Meeting Manager slot is completed.
-4. Review the task, generate a customer message, edit it if needed, and select
+5. Review the task, generate a customer message, edit it if needed, and select
    **Send to Customer**.
-5. Open **Activity Log** to show the email draft, delivery receipt, and task
+6. Open **Activity Log** to show the email draft, delivery receipt, and task
    actions recorded against the completed meeting.
 
 The demo email delivery and masked recipient receipt are stored in MySQL. The
