@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes, useNavigate } from "react-router-dom";
 
 import CustomerProfile from "./pages/customerprofile";
 import DocumentChat from "./pages/DocumentChat";
@@ -36,6 +36,7 @@ function navLinkClass({ isActive }) {
 }
 
 function App() {
+  const navigate = useNavigate();
   const [demoRole, setDemoRole] = useState(() => {
     return localStorage.getItem("demo_role") || "customer";
   });
@@ -43,6 +44,9 @@ function App() {
   function updateDemoRole(role) {
     localStorage.setItem("demo_role", role);
     setDemoRole(role);
+    navigate(role === "advisor" ? "/advisor-dashboard" : "/customer-profile", {
+      replace: true
+    });
   }
 
   return (
